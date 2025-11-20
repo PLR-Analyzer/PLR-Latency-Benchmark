@@ -135,6 +135,18 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+        elif method_type == "model_fit":
+            self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
+            self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
+            fit_data = method_data.get("fit_data")
+            if fit_data is not None:
+                D_fitted = fit_data.get("D_fitted")
+                if D_fitted is not None:
+                    self.ax2.plot(
+                        t, D_fitted, label="Fitted Model", color="green", linewidth=2
+                    )
+            self.ax2.set_ylabel("Diameter (mm)")
+            self.ax2.legend()
 
         # Common elements for second subplot
         self.ax2.set_xlabel("Time (s)")

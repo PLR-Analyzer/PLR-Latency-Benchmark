@@ -156,6 +156,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
             D_obs = np.asarray(npz["diameter_observed"])
             true_latency = float(npz.get("true_latency", np.nan))
             fps = float(npz.get("fps", 30.0))
+            led_duration = float(npz.get("led_duration", 1.0))
             stim_time = float(npz.get("stim_time", 0.5))
         except Exception as e:
             return {
@@ -168,7 +169,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
         t = np.linspace(0, dt * (n - 1), n)
 
         predicted_latency, _ = LatencyMethods.compute_by_name(
-            method_name, t, D_obs, stim_time
+            method_name, t, D_obs, stim_time, led_duration, fps
         )
 
         prediction_error = np.nan
@@ -265,7 +266,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
         # Compute latency according to selected method
         method = self.method_combo.currentText()
         predicted_latency, method_data = LatencyMethods.compute_by_name(
-            method, t, D_obs, stim_time
+            method, t, D_obs, stim_time, led_duration, fps
         )
 
         # Update plots via the plot widget
