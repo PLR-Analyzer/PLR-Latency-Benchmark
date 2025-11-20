@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-
 from simulation import simulate_plr_eq16_population
 
 

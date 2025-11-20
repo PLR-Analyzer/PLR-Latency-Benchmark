@@ -52,7 +52,7 @@ python3 -m pip install -r requirements.txt
 Generate synthetic data:
 
 ```bash
-python3 generate_dataset.py
+python3 data_generation/generate_dataset.py
 ```
 This will generate synthetic data with the default parameters. Default Parameters are choosen from the work of Capó-Aponte et al.
 
@@ -72,6 +72,8 @@ options:
   -l LED_DURATION, --led-duration LED_DURATION
                         Duration of LED pulse in seconds (default: 0.167)
 ```
+For further information about how the simulation model works and data is generated, please refer to:
+[data_generation/Generator.md](data_generation/Generator.md)
 
 Run the app:
 
