@@ -180,19 +180,30 @@ class LatencyMethods:
         return phi_ref * phi_ratio
 
     @staticmethod
-    def _simulate_dynamics(phi_arr, dt, D0, delay_samples, dMdD, phi_ref):
-        """Simulate diameter time course for a given `phi_arr`."""
+    def _simulate_dynamics(phi_arr, dt, D0, delay_samples, S, phi_ref=1.0):
+        """Simulate diameter time course for a given `phi_arr` using parameter `S`.
+
+        The dynamics follow the implementation in `simulation.py`:
+        - dDdt = rhs - mech
+        - constriction (dDdt < 0) uses dt_eff = dt / S
+        - dilation  (dDdt >= 0) uses dt_eff = dt / (3*S)
+        """
         n = len(phi_arr)
         D = np.zeros(n)
         D[0] = D0
         for i in range(1, n):
             idx_delay = max(0, i - delay_samples)
-            ratio = max(1e-8, phi_arr[idx_delay] / phi_ref)
+            ratio = max(1e-9, phi_arr[idx_delay] / phi_ref)
             rhs = 5.2 - 0.45 * np.log(ratio)
             arg = np.clip((D[i - 1] - 4.9) / 3.0, -0.9999, 0.9999)
             mech = 2.3026 * np.arctanh(arg)
-            dDdt = (rhs - mech) / dMdD
-            D[i] = D[i - 1] + dDdt * dt
+            dDdt = rhs - mech
+            # Eq 17 effect: constriction fast (dt/S), dilation slow (dt/(3S))
+            if dDdt < 0:
+                dt_eff = dt / max(1e-9, S)
+            else:
+                dt_eff = dt / max(1e-9, 3.0 * S)
+            D[i] = D[i - 1] + dDdt * dt_eff
         return D
 
     @staticmethod
@@ -228,12 +239,13 @@ class LatencyMethods:
         dt = 1.0 / fps
 
         # Initial guesses from data
-        D_max_guess = signal[: int(stim_time * fps)].mean()
-        D_min_guess = signal[int(stim_time * fps) :].min()
+        D_max_guess = float(np.mean(signal[: int(stim_time * fps)]))
+        D_min_guess = float(np.min(signal[int(stim_time * fps) :]))
         tau_latency_guess = 0.2
+        S_guess = 0.5
 
         def objective(params):
-            D_max, D_min, tau_latency, phi_stim_factor = params
+            D_max, D_min, tau_latency, S, phi_stim_factor = params
 
             # Constrain parameters
             # D_max = np.clip(D_max, 3.0, 7.0)
@@ -253,13 +265,13 @@ class LatencyMethods:
             on_mask = (t >= stim_time) & (t < stim_time + led_duration)
             phi_arr[on_mask] = phi_stim
 
-            # Simulate
+            # Simulate using S
             delay_samples = int(np.ceil(tau_latency / dt))
             try:
                 D_sim = LatencyMethods._simulate_dynamics(
-                    phi_arr, dt, D_max, delay_samples, dMdD=1.0, phi_ref=1.0
+                    phi_arr, dt, D_max, delay_samples, S, phi_ref=1.0
                 )
-            except:
+            except Exception:
                 return np.full_like(signal, 1e10)
 
             # Error: focus on response region
@@ -276,21 +288,21 @@ class LatencyMethods:
             return error
 
         # Optimize
-        p0 = [D_max_guess, D_min_guess, tau_latency_guess, 2.0]
+        p0 = [D_max_guess, D_min_guess, tau_latency_guess, S_guess, 2.0]
         try:
             result = least_squares(
                 objective,
                 p0,
                 bounds=(
-                    [3.0, 2.5, 0.05, 0.5],
-                    [7.0, D_max_guess - 0.1, 1.0, float("inf")],
+                    [3.0, 2.5, 0.05, 0.1, 0.5],
+                    [7.0, D_max_guess - 0.1, 1.0, 100.0, float("inf")],
                 ),
-                max_nfev=500,
+                max_nfev=1000,
             )
-            D_max_fit, D_min_fit, tau_latency_fit, phi_stim_factor = result.x
-        except:
+            D_max_fit, D_min_fit, tau_latency_fit, S_fit, phi_stim_factor = result.x
+        except Exception:
             # Fall back to initial guess
-            D_max_fit, D_min_fit, tau_latency_fit, phi_stim_factor = p0
+            D_max_fit, D_min_fit, tau_latency_fit, S_fit, phi_stim_factor = p0
 
         # Generate fitted model
         phi_baseline = LatencyMethods._flux_from_diameter(D_max_fit, phi_ref=1.0)
@@ -303,7 +315,7 @@ class LatencyMethods:
 
         delay_samples = int(np.ceil(tau_latency_fit / dt))
         D_fitted = LatencyMethods._simulate_dynamics(
-            phi_arr, dt, D_max_fit, delay_samples, dMdD=1.0, phi_ref=1.0
+            phi_arr, dt, D_max_fit, delay_samples, S_fit, phi_ref=1.0
         )
 
         latency = stim_time + tau_latency_fit
@@ -313,6 +325,7 @@ class LatencyMethods:
             "D_max": D_max_fit,
             "D_min": D_min_fit,
             "tau_latency": tau_latency_fit,
+            "S": float(S_fit),
             "phi_stim_factor": phi_stim_factor,
         }
 
