@@ -3,30 +3,152 @@ import numpy as np
 
 
 def flux_from_diameter(D, phi_ref=1.0):
-    """Compute retinal flux φ that gives steady-state diameter D (from Eq. 16)."""
     arg = np.clip((D - 4.9) / 3.0, -0.9999, 0.9999)
     rhs = 5.2 - 2.3026 * np.arctanh(arg)
     phi_ratio = np.exp(rhs / 0.45)
     return phi_ref * phi_ratio
 
 
-def _simulate_dynamics(phi_arr, dt, D0, delay_samples, dMdD, phi_ref):
-    """Simulate diameter time course for a given `phi_arr`.
-
-    Returns array `D` of same length as `phi_arr`.
-    """
+def _simulate_dynamics(phi_arr, dt, D0, delay_samples, S):
     n = len(phi_arr)
     D = np.zeros(n)
     D[0] = D0
     for i in range(1, n):
         idx_delay = max(0, i - delay_samples)
-        ratio = max(1e-8, phi_arr[idx_delay] / phi_ref)
+        ratio = max(1e-9, phi_arr[idx_delay] / 1.0)
         rhs = 5.2 - 0.45 * np.log(ratio)
         arg = np.clip((D[i - 1] - 4.9) / 3.0, -0.9999, 0.9999)
         mech = 2.3026 * np.arctanh(arg)
-        dDdt = (rhs - mech) / dMdD
-        D[i] = D[i - 1] + dDdt * dt
+        dDdt = rhs - mech
+        # Eq 17 effect: constriction fast (dt/S), dilation slow (dt/(3S))
+        if dDdt < 0:
+            dt_eff = dt / max(1e-9, S)
+        else:
+            dt_eff = dt / max(1e-9, 3.0 * S)
+        D[i] = D[i - 1] + dDdt * dt_eff
     return D
+
+
+def _compute_metrics_from_trace(time, D, stim_time, led_duration, tau_latency):
+    dt = time[1] - time[0]
+    # Start searching after stimulus + latency
+    search_start_t = stim_time + tau_latency
+    i_start = int(np.searchsorted(time, search_start_t))
+    # index of minimal diameter after stimulus
+    if i_start >= len(D) - 1:
+        return None  # can't compute
+    i_min_rel = np.argmin(D[i_start:])  # relative to i_start
+    i_min = i_start + i_min_rel
+
+    # compute derivative
+    deriv = np.gradient(D, dt)
+
+    # average constriction velocity: mean derivative between onset and minimum
+    if i_min <= i_start:
+        return None
+    avg_constr_vel = np.mean(deriv[i_start:i_min])  # should be negative
+
+    # max constriction velocity
+    max_constr_vel = np.min(deriv[i_start:i_min])  # most negative
+
+    # dilation velocity: average derivative in window after minimum (take next 0.5s or until end)
+    post_start = i_min + 1
+    post_end = min(len(D), post_start + int(0.5 / dt))
+    if post_end <= post_start:
+        return None
+    avg_dil_vel = np.mean(deriv[post_start:post_end])  # should be positive
+
+    # 75% recovery time: time to recover to D75 = min + 0.75*(max-min)
+    D_min = D[i_min]
+    D_max = np.max(D[: i_start + 1])  # baseline estimate (before constriction)
+    D75 = D_min + 0.75 * (D_max - D_min)
+    # find first index after i_min where D >= D75
+    idx_after = np.where(D[i_min:] >= D75)[0]
+    if idx_after.size == 0:
+        t75 = np.nan
+    else:
+        t75 = idx_after[0] * dt  # time relative to i_min
+    return {
+        "avg_constr_vel": float(avg_constr_vel),
+        "max_constr_vel": float(max_constr_vel),
+        "avg_dil_vel": float(avg_dil_vel),
+        "t75": float(t75),
+    }
+
+
+def tune_S(
+    D_max=5.63,
+    D_min=3.78,
+    stim_time=0.5,
+    led_duration=0.167,
+    fps=200,
+    tau_latency=0.21175,
+    target_vel_mean=-4.11,
+    target_vel_max=-5.15,
+    target_dil_vel=1.02,
+    target_75pct=1.77,
+):
+    """
+    Robust two-stage search for S.
+    Returns S_best (float).
+    """
+    dt = 1.0 / fps
+    duration = 4.0
+    n = int(duration * fps) + 1
+    time = np.linspace(0, duration, n)
+
+    phi_base = flux_from_diameter(D_max)
+    phi_stim = flux_from_diameter(D_min)
+    phi = np.full(n, phi_base)
+    on_mask = (time >= stim_time) & (time < stim_time + led_duration)
+    phi[on_mask] = phi_stim
+    delay_samples = int(max(0, round(tau_latency / dt)))
+
+    # loss weighting
+    w = dict(avg=1.0, maxc=1.0, dil=1.0, t75=0.5)
+
+    def loss_for_S(S):
+        D = _simulate_dynamics(phi, dt, D_max, delay_samples, S)
+        metrics = _compute_metrics_from_trace(
+            time, D, stim_time, led_duration, tau_latency
+        )
+        if metrics is None:
+            return np.inf
+        # squared-error style loss (scale each term to typical magnitude)
+        L = 0.0
+        L += w["avg"] * (metrics["avg_constr_vel"] - target_vel_mean) ** 2
+        L += w["maxc"] * (metrics["max_constr_vel"] - target_vel_max) ** 2
+        L += w["dil"] * (metrics["avg_dil_vel"] - target_dil_vel) ** 2
+        # t75 is in sec relative to min; if nan, penalize heavily
+        if np.isnan(metrics["t75"]):
+            L += 100.0
+        else:
+            L += w["t75"] * (metrics["t75"] - target_75pct) ** 2
+        return L
+
+    # Coarse grid (log-spaced to capture wide range)
+    coarse = np.concatenate(
+        [
+            np.linspace(0.5, 5, 10),
+            np.linspace(5, 50, 10),
+            np.linspace(50, 500, 10),
+            np.linspace(500, 2000, 10),
+        ]
+    )
+    coarse = np.unique(coarse)
+    losses = np.array([loss_for_S(float(S)) for S in coarse])
+    idx0 = np.nanargmin(losses)
+    S0 = coarse[idx0]
+
+    # Fine grid around S0
+    lower = max(0.1, S0 * 0.5)
+    upper = S0 * 2.0 + 1e-9
+    fine = np.linspace(lower, upper, 50)
+    losses_fine = np.array([loss_for_S(float(S)) for S in fine])
+    idx1 = np.nanargmin(losses_fine)
+    S_best = float(fine[idx1])
+
+    return S_best
 
 
 def _find_required_phi(
@@ -37,8 +159,7 @@ def _find_required_phi(
     time,
     on_mask,
     delay_samples,
-    dMdD,
-    phi_ref,
+    S,
     dt,
     tol=1e-3,
     max_factor=1e6,
@@ -56,7 +177,7 @@ def _find_required_phi(
     def min_D_for_phi(phi_cand):
         phi_arr = np.full_like(time, phi_baseline)
         phi_arr[on_mask] = phi_cand
-        D_sim = _simulate_dynamics(phi_arr, dt, D0, delay_samples, dMdD, phi_ref)
+        D_sim = _simulate_dynamics(phi_arr, dt, D0, delay_samples, S)
         return D_sim.min()
 
     # find an upper bound that achieves target (exponential expansion)
@@ -89,104 +210,91 @@ def _find_required_phi(
 
 def simulate_plr_eq16_population(
     duration=5.0,
-    fps=30.0,
+    fps=200,
     stim_time=0.5,
     led_duration=0.167,
-    phi_ref=1.0,
-    dMdD=1.0,
     noise_sd=0.03,
     drift_amp=0.05,
     seed=None,
 ):
-    """
-    Simulate a population-realistic PLR using Equation (16) with parameters drawn
-    from literature (Napieralski & Rynkiewicz, 2019; population data table).
-
-    Returns
-    -------
-    time, D_obs, D_clean, true_latency, params
-    """
     if seed is not None:
         np.random.seed(seed)
 
-    # --- draw subject-specific parameters from reported population stats ---
-    D_max = np.random.normal(5.63, 0.79)  # baseline diameter (dark)
-    D_min = np.random.normal(3.78, 0.56)  # minimum diameter (bright)
-    tau_latency = np.random.normal(0.21175, 0.00951)
+    # sample population params
+    D_max = float(np.random.normal(5.63, 0.79))
+    D_min = float(np.random.normal(3.78, 0.56))
+    tau_latency = float(np.random.normal(0.21175, 0.00951))
 
     # steady-state flux values corresponding to these diameters
-    phi_baseline = flux_from_diameter(D_max, phi_ref)
+    phi_base = flux_from_diameter(D_max)
     # steady-state stimulus flux corresponding to D_min (may be insufficient for
     # brief pulses). We attempt to find an increased `phi_stim` that makes the
     # transient reach `D_min` during the short LED on-time.
-    phi_stim_ss = flux_from_diameter(D_min, phi_ref)
+    phi_stim = flux_from_diameter(D_min)
+
+    # tune S for this "subject" (robust)
+    S = tune_S(
+        D_max=D_max,
+        D_min=D_min,
+        stim_time=stim_time,
+        led_duration=led_duration,
+        fps=fps,
+        tau_latency=tau_latency,
+    )
 
     dt = 1.0 / fps
-    n = int(np.round(duration * fps)) + 1
+    n = int(round(duration * fps)) + 1
     time = np.linspace(0, duration, n)
-
-    # light step function (initially using baseline; we'll fill in the stimulus
-    # flux below, possibly boosted to reach D_min during the short pulse)
-    phi = np.full(n, phi_baseline)
+    phi = np.full(n, phi_base)
     on_mask = (time >= stim_time) & (time < stim_time + led_duration)
-
     # if the LED is very short relative to dynamics, the steady-state flux
     # `phi_stim_ss` might not drive the transient low enough. Find a stronger
     # stimulus flux if needed.
     delay_samples = int(np.ceil(tau_latency / dt))
+
     phi_stim = _find_required_phi(
         D_max,
         D_min,
-        phi_baseline,
-        phi_stim_ss,
+        phi_base,
+        phi_stim,
         time,
         on_mask,
         delay_samples,
-        dMdD,
-        phi_ref,
+        S,
         dt,
     )
     phi[on_mask] = phi_stim
 
-    # integration
-    D = _simulate_dynamics(phi, dt, D_max, delay_samples, dMdD, phi_ref)
+    delay_samples = int(max(0, round(tau_latency / dt)))
 
-    # add slow drift + measurement noise
+    # integrate with Eq17 dynamics
+    D_clean = _simulate_dynamics(phi, dt, D_max, delay_samples, S)
+
+    # add hippus + noise
     hippus_freq = np.random.uniform(0.05, 0.3)
     drift = drift_amp * np.sin(
         2 * np.pi * hippus_freq * time + np.random.uniform(0, 2 * np.pi)
     )
     noise = np.random.normal(0, noise_sd, size=n)
-
-    D_clean = D.copy()
     D_obs = D_clean + drift + noise
 
     params = dict(
         D_max=D_max,
         D_min=D_min,
-        phi_baseline=phi_baseline,
-        phi_stim=phi_stim,
         tau_latency=tau_latency,
-        noise_sd=noise_sd,
-        drift_amp=drift_amp,
-        hippus_freq=hippus_freq,
+        S=S,
+        phi_base=phi_base,
+        phi_stim=phi_stim,
     )
-
     return time, D_obs, D_clean, stim_time + tau_latency, params
 
 
-# --- Example usage ---
+# Quick demo
 if __name__ == "__main__":
-    t, D_obs, D_clean, true_lat, params = simulate_plr_eq16_population(seed=None)
-    print("Parameters:", params)
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(t, D_obs, label="Observed (noisy)", alpha=0.7)
-    plt.plot(t, D_clean, marker="o", label="Clean Eq.16 simulation", linewidth=2)
-    plt.axvline(true_lat, color="r", ls="--", label=f"True latency = {true_lat:.3f}s")
-    plt.axvspan(0.5, 0.5 + 0.167, color="yellow", alpha=0.2, label="LED ON")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Pupil diameter (mm)")
+    t, D_obs, D_clean, true_lat, params = simulate_plr_eq16_population(seed=0)
+    print("params:", params)
+    plt.plot(t, D_clean, label="clean")
+    plt.plot(t, D_obs, alpha=0.6, label="obs")
+    plt.axvline(true_lat, color="r", ls="--", label="true latency")
     plt.legend()
-    plt.tight_layout()
     plt.show()

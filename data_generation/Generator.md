@@ -5,7 +5,8 @@ This repository contains a physiologically realistic simulator for generating sy
 The simulation is based on the **nonlinear differential model** of Pamplona & Oliveira [1], extended with:
 
 - **Population-level physiological variability**  
-- **Stimulus flux optimization** to achieve target constriction during short light pulses  
+- **Stimulus flux optimization** to achieve target constriction during short light pulses
+- **Automatic tuning of asymmetric constriction vs. dilation speeds** to match empirical population PLR metrics
 - **Hippus-like drift** and **measurement noise**  
 - Delay-based **neural latency** modeling
 
@@ -38,6 +39,10 @@ The equation is discretized using explicit Euler integration:
 
 ```python
 dDdt = (rhs - mech) / dMdD
+if dDdt < 0:
+    dt_eff = dt / S            # fast constriction
+else:
+    dt_eff = dt / (3 * S)      # slow dilation
 D[i] = D[i - 1] + dDdt * dt
 ```
 The retinal illuminance is delayed by the neural latency using a simple index offset:
@@ -88,7 +93,28 @@ The simulator now includes `_find_required_phi`, which:
 
 This produces a stimulus strong enough to reach the physiologically realistic minimum diameter during a short LED flash.
 
-## 5. Full Simulation Pipeline
+## 5. Automatic Tuning of the S Parameter
+This simulator automates tuning of the parameter S, introduced by Pamplona et al. [1], which is a constant that affects the constriction/dilation velocity and varies among individuals. The simulator is tuning S so that the simulated PLR matches known physiological metrics [2]:
+
+| Metric                        | Target (mean ± SD) |
+| ----------------------------- | ------------------ |
+| Average constriction velocity | −4.11 ± 0.44 mm/s  |
+| Maximum constriction velocity | −5.15 ± 0.99 mm/s  |
+| Dilation velocity             | +1.02 ± 0.17 mm/s  |
+| 75% recovery time             | 1.77 ± 0.38 s      |
+
+**How S is estimated**
+The simulator:
+1. Simulates the PLR for many candidate S values
+2. Measures realistic features from the simulated trace
+3. Computes a weighted squared-error loss
+4. Performs a two-stage search:
+    - coarse logarithmic grid
+    - fine grid around the best value
+
+This yields a physiologically personalized value of S for each synthetic subject.
+
+## 6. Full Simulation Pipeline
 Each simulated PLR curve is generated as follows:
 
 ### Step 1 — Draw subject parameters
@@ -129,7 +155,7 @@ $$
 D_{obs}=D_{clean}+\mathrm{drift}+\mathrm{noise}
 $$
 
-## 6. Output
+## 7. Output
 The simulator returns:
 
 ```python
