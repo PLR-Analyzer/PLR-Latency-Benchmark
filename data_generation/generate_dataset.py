@@ -63,8 +63,8 @@ def generate_synthetic_dataset(
             stim_time=stim_time,
             led_duration=led_duration,
             seed=i,  # Deterministic seed based on index
-            noise_sd=0.01,
-            drift_amp=0.2,
+            noise_sd=0.03,
+            drift_amp=0.05,
         )
 
         # Create filename with timestamp for uniqueness
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         "-f",
         "--fps",
         type=float,
-        default=25.0,
+        default=32.0,
         help="Sampling rate in fps (default: 25.0)",
     )
     parser.add_argument(

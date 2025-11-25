@@ -32,18 +32,39 @@ def phi_at(t_query, time, phi_arr, phi_default=None):
     return float((1 - alpha) * p0 + alpha * p1)
 
 
-def plr_rhs(D, phi_eff, S):
-    """Right-hand-side value dD/dt using Eq.16 & 17, phi_eff is phi(t - tau)."""
-    ratio = max(1e-12, float(phi_eff) / 1.0)
+def plr_rhs(D, phi):
+    """Compute nonlinear RHS of Eq.16: dD/dt = f(D, phi)"""
+    ratio = max(1e-9, phi / 1.0)
     rhs = 5.2 - 0.45 * np.log(ratio)
+
     arg = np.clip((D - 4.9) / 3.0, -0.9999, 0.9999)
     mech = 2.3026 * np.arctanh(arg)
-    dDdt = rhs - mech
-    # asymmetry via S
-    if dDdt < 0:
-        return dDdt / S
+
+    return rhs - mech  # dD/dt
+
+
+def rk4_step(D, dt_eff, phi, S):
+    """
+    One RK4 step for Eq.16 with asymmetric speed (Eq.17).
+    dt_eff is already the post-onset fractional step.
+    """
+
+    # Determine constriction vs dilation
+    dDdt0 = plr_rhs(D, phi)
+    if dDdt0 < 0:
+        # constriction (fast)
+        dt_dyn = dt_eff / max(1e-9, S)
     else:
-        return dDdt / (3.0 * S)
+        # dilation (3× slower)
+        dt_dyn = dt_eff / max(1e-9, 3.0 * S)
+
+    # RK4 sub-steps
+    k1 = plr_rhs(D, phi)
+    k2 = plr_rhs(D + 0.5 * dt_dyn * k1, phi)
+    k3 = plr_rhs(D + 0.5 * dt_dyn * k2, phi)
+    k4 = plr_rhs(D + dt_dyn * k3, phi)
+
+    return D + (dt_dyn / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 
 def rk4_step_with_delay(D, t, dt, time_array, phi_arr, tau_latency, S):
@@ -73,21 +94,73 @@ def rk4_step_with_delay(D, t, dt, time_array, phi_arr, tau_latency, S):
 
 def simulate_dynamics_rk4(phi_arr, time, D0, tau_latency, S):
     """
-    Simulate PLR dynamics with RK4 integrator.
-    phi_arr aligned to time array; tau_latency (s) is applied continuously:
-    uses phi(t - tau_latency) at each RK4 evaluation.
+    RK4 solver with *continuous latency* and *fractional sub-stepping*.
+
+    phi_arr : illuminance at each sample time (before latency shift)
+    tau_latency : physiological latency (seconds)
     """
+
     n = len(time)
-    D = np.zeros(n, dtype=float)
-    D[0] = float(D0)
+    D = np.zeros(n)
+    D[0] = D0
 
+    # Create φ_delayed(t) as a continuous function --------------------------------------
+    # For a sample at time t_i, the effective light is φ(t_i - tau)
+    # We implement this with linear interpolation for continuity.
+    t = time
+
+    def phi_delayed(tq):
+        u = tq - tau_latency
+        if u <= t[0]:
+            return phi_arr[0]
+        if u >= t[-1]:
+            return phi_arr[-1]
+        j = np.searchsorted(t, u) - 1
+        j = max(0, min(j, n - 2))
+        # linear interpolation
+        w = (u - t[j]) / (t[j + 1] - t[j])
+        return (1 - w) * phi_arr[j - 1] + w * phi_arr[j]
+
+    # Main integration loop --------------------------------------------------------------
     for i in range(1, n):
-        t = time[i - 1]
-        dt_full = time[i] - time[i - 1]
+        t0 = t[i - 1]
+        t1 = t[i]
+        dt = t1 - t0
 
-        # If entire interval is before first effective input (time[i] <= first time + tau), the interpolated phi may be baseline
-        # RK4 step integrates across full dt_full; RK4 internals will query phi_at(t_sub - tau).
-        D[i] = rk4_step_with_delay(D[i - 1], t, dt_full, time, phi_arr, tau_latency, S)
+        # Determine if φ_delayed changes inside (t0, t1)
+        # This happens if delayed time (t - tau) crosses a sample boundary.
+        # We approximate by checking φ at t0+epsilon and t1-epsilon.
+        phi0 = phi_delayed(t0)
+        phi1 = phi_delayed(t1)
+
+        if phi0 == phi1:
+            # No change: a single RK4 step
+            D[i] = rk4_step(D[i - 1], dt, phi0, S)
+
+        else:
+            # φ changes somewhere inside this interval → find the crossing time
+            # Solve phi_delayed(t_cross) = new value by searching between t0 and t1
+            # Do a binary search for the transition point.
+
+            lo = t0
+            hi = t1
+            for _ in range(25):
+                mid = 0.5 * (lo + hi)
+                if abs(phi_delayed(mid) - phi0) < 1e-12:
+                    lo = mid
+                else:
+                    hi = mid
+            t_cross = 0.5 * (lo + hi)
+
+            # split into Δt1 (before change), Δt2 (after change)
+            dt1 = t_cross - t0
+            dt2 = t1 - t_cross
+
+            # integrate over Δt1 with φ0
+            Dmid = rk4_step(D[i - 1], dt1, phi0, S)
+
+            # integrate over Δt2 with φ1
+            D[i] = rk4_step(Dmid, dt2, phi1, S)
 
     return D
 
@@ -163,7 +236,7 @@ def tune_S(
     phi_base = flux_from_diameter(D_max)
     phi_stim = flux_from_diameter(D_min)
     phi = np.full(n, phi_base)
-    on_mask = (time >= stim_time) & (time < stim_time + led_duration)
+    on_mask = (time > stim_time) & (time <= stim_time + led_duration)
     phi[on_mask] = phi_stim
     delay_samples = int(max(0, round(tau_latency / dt)))
 
