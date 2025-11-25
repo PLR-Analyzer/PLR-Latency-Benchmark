@@ -63,7 +63,7 @@ class PlotWidget(QtWidgets.QWidget):
         self.ax1.set_ylabel("Diameter (mm)")
         self.ax1.axvspan(stim_time, stim_time + led_duration, color="yellow", alpha=0.2)
 
-        # Add true latency line only (predicted line removed to reduce clutter)
+        # Plot true latency line
         if np.isfinite(true_latency):
             self.ax1.axvline(
                 true_latency, color="magenta", linestyle="--", label="True"
