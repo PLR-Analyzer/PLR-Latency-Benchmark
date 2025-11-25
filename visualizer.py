@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from latency_methods import LatencyMethods
+from metrics import compute_metrics_from_file, summarize_metrics
 from plot_widget import PlotWidget
 
 
@@ -97,6 +98,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
             "max_diameter",
             "min_diameter",
             "amplitude",
+            "constr_latency",
             "t75",
             "avg_constr_vel",
             "max_constr_vel",
@@ -116,129 +118,47 @@ class LatencyVisualizer(QtWidgets.QWidget):
         return panel
 
     def _compute_metrics_from_file(self, filepath):
-        """Load a file and compute PLR metrics.
-
-        Returns a dict with metrics or None if loading fails.
-        """
-        try:
-            npz = np.load(str(filepath), allow_pickle=True)
-            D_obs = np.asarray(npz["diameter_observed"])
-            fps = float(npz.get("fps", 30.0))
-            stim_time = float(npz.get("stim_time", 0.5))
-            led_duration = float(npz.get("led_duration", 0.167))
-        except Exception as e:
-            print(f"Failed to load metrics from {filepath}: {e}")
-            return None
-
-        dt = 1.0 / fps
-        n = len(D_obs)
-        t = np.linspace(0, dt * (n - 1), n)
-
-        # Compute derivative and constriction region
-        deriv = np.gradient(D_obs, dt)
-
-        # Baseline (before stimulus)
-        baseline_mask = t < stim_time
-        D_baseline_mean = np.mean(D_obs[baseline_mask])
-        D_max = D_baseline_mean  # max diameter (baseline)
-
-        # Response region (after stimulus + latency estimate)
-        response_start_idx = int((stim_time + 0.2) * fps)
-        response_start_idx = min(response_start_idx, len(D_obs) - 1)
-        response_region = D_obs[response_start_idx:]
-        D_min = np.min(response_region) if len(response_region) > 0 else np.nan
-
-        # Amplitude (percent constriction)
-        amplitude = ((D_max - D_min) / D_max * 100) if D_max > 0 else np.nan
-
-        # 75% recovery time
-        if np.isfinite(D_min) and D_max > D_min:
-            D75 = D_min + 0.75 * (D_max - D_min)
-            min_idx = response_start_idx + np.argmin(response_region)
-            idx_recovery = np.where(D_obs[min_idx:] >= D75)[0]
-            t75 = (idx_recovery[0] * dt) if len(idx_recovery) > 0 else np.nan
-        else:
-            t75 = np.nan
-
-        # Constriction and dilation velocities
-        constr_mask = (t >= stim_time) & (t <= stim_time + led_duration + 1.0)
-        constr_deriv = deriv[constr_mask]
-        constr_neg = constr_deriv[constr_deriv < 0]
-        avg_constr_vel = np.mean(constr_neg) if len(constr_neg) > 0 else np.nan
-        max_constr_vel = np.min(constr_neg) if len(constr_neg) > 0 else np.nan
-
-        # Dilation velocity (after minimum)
-        if np.isfinite(D_min) and response_start_idx + 1 < len(D_obs):
-            min_idx = response_start_idx + np.argmin(response_region)
-            dil_window_end = min(min_idx + int(0.5 * fps), len(deriv))
-            dil_deriv = deriv[min_idx:dil_window_end]
-            dil_deriv_pos = dil_deriv[dil_deriv > 0]
-            dil_vel = np.mean(dil_deriv_pos) if len(dil_deriv_pos) > 0 else np.nan
-        else:
-            dil_vel = np.nan
-
-        return {
-            "D_max": D_max,
-            "D_min": D_min,
-            "amplitude": amplitude,
-            "t75": t75,
-            "avg_constr_vel": avg_constr_vel,
-            "max_constr_vel": max_constr_vel,
-            "dil_vel": dil_vel,
-        }
+        """Wrapper: delegate to metrics.compute_metrics_from_file."""
+        return compute_metrics_from_file(filepath)
 
     def _update_metrics_display(self):
-        """Recompute and update metrics display for loaded folder."""
+        """Recompute and update metrics display for loaded folder by using
+        the summarization helper in `metrics.py`.
+        """
         if not self.files:
-            # Clear metrics
             for label in self.metric_labels.values():
                 label.setText("N/A")
             return
 
-        # Collect metrics from all files
-        all_metrics = {
-            "D_max": [],
-            "D_min": [],
-            "amplitude": [],
-            "t75": [],
-            "avg_constr_vel": [],
-            "max_constr_vel": [],
-            "dil_vel": [],
+        summary = summarize_metrics(self.files)
+
+        label_texts = {
+            "max_diameter": "Max diameter (mm)",
+            "min_diameter": "Min diameter (mm)",
+            "amplitude": "Amplitude (%)",
+            "constr_latency": "Constriction Latency (ms)",
+            "t75": "75% Recovery (s)",
+            "avg_constr_vel": "Avg Constr Vel (mm/s)",
+            "max_constr_vel": "Max Constr Vel (mm/s)",
+            "dil_vel": "Dilation Vel (mm/s)",
         }
 
-        for filepath in self.files:
-            metrics = self._compute_metrics_from_file(filepath)
-            if metrics is not None:
-                for key in all_metrics:
-                    if np.isfinite(metrics[key]):
-                        all_metrics[key].append(metrics[key])
-
-        # Update labels with mean (std) format
-        metric_display = {
-            "max_diameter": (all_metrics["D_max"], "Max diameter (mm)"),
-            "min_diameter": (all_metrics["D_min"], "Min diameter (mm)"),
-            "amplitude": (all_metrics["amplitude"], "Amplitude (%)"),
-            "t75": (all_metrics["t75"], "75% Recovery (s)"),
-            "avg_constr_vel": (
-                all_metrics["avg_constr_vel"],
-                "Avg Constr Vel (mm/s)",
-            ),
-            "max_constr_vel": (
-                all_metrics["max_constr_vel"],
-                "Max Constr Vel (mm/s)",
-            ),
-            "dil_vel": (all_metrics["dil_vel"], "Dilation Vel (mm/s)"),
-        }
-
-        for key, (data_list, label_text) in metric_display.items():
-            if len(data_list) > 0:
-                mean_val = np.mean(data_list)
-                std_val = np.std(data_list)
-                self.metric_labels[key].setText(
-                    f"{label_text}: {mean_val:.4f} ({std_val:.4f})"
-                )
+        for key, label in self.metric_labels.items():
+            mean_val, std_val, count = summary.get(key, (np.nan, np.nan, 0))
+            if count > 0 and np.isfinite(mean_val):
+                # display constriction latency in milliseconds
+                if key == "constr_latency":
+                    mean_ms = mean_val * 1000.0
+                    std_ms = std_val * 1000.0
+                    label.setText(
+                        f"{label_texts.get(key, key)}: {mean_ms:.1f} ({std_ms:.1f})"
+                    )
+                else:
+                    label.setText(
+                        f"{label_texts.get(key, key)}: {mean_val:.4f} ({std_val:.4f})"
+                    )
             else:
-                self.metric_labels[key].setText(f"{label_text}: N/A")
+                label.setText(f"{label_texts.get(key, key)}: N/A")
 
     def on_load_folder(self):
         folder = QFileDialog.getExistingDirectory(
