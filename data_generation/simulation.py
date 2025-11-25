@@ -9,23 +9,64 @@ def flux_from_diameter(D, phi_ref=1.0):
     return phi_ref * phi_ratio
 
 
-def _simulate_dynamics(phi_arr, dt, D0, delay_samples, S):
-    n = len(phi_arr)
+def plr_rhs(D, phi, S):
+    """Compute the right-hand side of the Pamplona-Olivera Model (Eq 16)."""
+
+    ratio = max(1e-9, phi / 1.0)
+    rhs = 5.2 - 0.45 * np.log(ratio)
+
+    arg = np.clip((D - 4.9) / 3.0, -0.9999, 0.9999)
+    mech = 2.3026 * np.arctanh(arg)
+
+    dDdt = rhs - mech
+
+    # Asymmetric dynamics (Eq. 17)
+    if dDdt < 0:
+        # constriction → fast
+        return dDdt / S
+    else:
+        # dilation → 3x slower
+        return dDdt / (3 * S)
+
+
+def rk4_step(D, dt, phi, S):
+    """Runge-Kutta 4 integration step."""
+    k1 = plr_rhs(D, phi, S)
+    k2 = plr_rhs(D + 0.5 * dt * k1, phi, S)
+    k3 = plr_rhs(D + 0.5 * dt * k2, phi, S)
+    k4 = plr_rhs(D + dt * k3, phi, S)
+
+    return D + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+
+
+def simulate_dynamics_rk4(phi_arr, time, D0, t_onset, S):
+    """Simulate dynamics using RK4 with continuous onset."""
+
+    n = len(time)
     D = np.zeros(n)
     D[0] = D0
+
     for i in range(1, n):
-        idx_delay = max(0, i - delay_samples)
-        ratio = max(1e-9, phi_arr[idx_delay] / 1.0)
-        rhs = 5.2 - 0.45 * np.log(ratio)
-        arg = np.clip((D[i - 1] - 4.9) / 3.0, -0.9999, 0.9999)
-        mech = 2.3026 * np.arctanh(arg)
-        dDdt = rhs - mech
-        # Eq 17 effect: constriction fast (dt/S), dilation slow (dt/(3S))
-        if dDdt < 0:
-            dt_eff = dt / max(1e-9, S)
+
+        dt_full = time[i] - time[i - 1]
+
+        # Pre-onset → no RHS contribution
+        if time[i] <= t_onset:
+            D[i] = D[i - 1]
+            continue
+
+        # Partial exposure for the first post-onset frame
+        if time[i - 1] < t_onset < time[i]:
+            dt_eff = time[i] - t_onset
         else:
-            dt_eff = dt / max(1e-9, 3.0 * S)
-        D[i] = D[i - 1] + dDdt * dt_eff
+            dt_eff = dt_full
+
+        # Effective illuminance (no discrete sample delay needed here)
+        phi = phi_arr[i]
+
+        # One RK4 step using only dt_eff (fractional frame time)
+        D[i] = rk4_step(D[i - 1], dt_eff, phi, S)
+
     return D
 
 
@@ -108,7 +149,7 @@ def tune_S(
     w = dict(avg=1.0, maxc=1.0, dil=1.0, t75=0.5)
 
     def loss_for_S(S):
-        D = _simulate_dynamics(phi, dt, D_max, delay_samples, S)
+        D = simulate_dynamics_rk4(phi, time, D_max, stim_time, S)
         metrics = _compute_metrics_from_trace(
             time, D, stim_time, led_duration, tau_latency
         )
@@ -157,6 +198,7 @@ def _find_required_phi(
     phi_baseline,
     phi_target_ss,
     time,
+    stim_time,
     on_mask,
     delay_samples,
     S,
@@ -177,7 +219,7 @@ def _find_required_phi(
     def min_D_for_phi(phi_cand):
         phi_arr = np.full_like(time, phi_baseline)
         phi_arr[on_mask] = phi_cand
-        D_sim = _simulate_dynamics(phi_arr, dt, D0, delay_samples, S)
+        D_sim = simulate_dynamics_rk4(phi_arr, time, D0, stim_time, S)
         return D_sim.min()
 
     # find an upper bound that achieves target (exponential expansion)
@@ -258,6 +300,7 @@ def simulate_plr_eq16_population(
         phi_base,
         phi_stim,
         time,
+        stim_time,
         on_mask,
         delay_samples,
         S,
@@ -268,7 +311,7 @@ def simulate_plr_eq16_population(
     delay_samples = int(max(0, round(tau_latency / dt)))
 
     # integrate with Eq17 dynamics
-    D_clean = _simulate_dynamics(phi, dt, D_max, delay_samples, S)
+    D_clean = simulate_dynamics_rk4(phi, time, D_max, stim_time, S)
 
     # add hippus + noise
     hippus_freq = np.random.uniform(0.05, 0.3)
