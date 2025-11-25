@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.integrate import solve_ivp
+from scipy.interpolate import interp1d
 
 
 def flux_from_diameter(D, phi_ref=1.0):
@@ -9,160 +11,66 @@ def flux_from_diameter(D, phi_ref=1.0):
     return phi_ref * phi_ratio
 
 
-def phi_at(t_query, time, phi_arr, phi_default=None):
-    """Return phi(t_query) by linear interpolation.
-    If t_query < time[0], returns phi_default if provided, else phi_arr[0].
-    If t_query > time[-1], returns phi_arr[-1].
+def plr_rhs_with_latency(t, D, phi_interp_step, tau_latency, S):
     """
-    if phi_default is None:
-        phi_default = phi_arr[0]
-    if t_query <= time[0]:
-        return float(phi_default)
-    if t_query >= time[-1]:
-        return float(phi_arr[-1])
-    # find indices
-    idx = np.searchsorted(time, t_query)  # first index with time[idx] >= t_query
-    if time[idx] == t_query:
-        return float(phi_arr[idx])
-    t0 = time[idx - 1]
-    t1 = time[idx]
-    p0 = phi_arr[idx - 1]
-    p1 = phi_arr[idx]
-    alpha = (t_query - t0) / (t1 - t0)
-    return float((1 - alpha) * p0 + alpha * p1)
+    RHS for dD/dt including:
+    - latency t - tau_latency
+    - nonlinear iris mechanics (atanh term)
+    - asymmetric S scaling (Eq 17)
+    phi_interp_step must be a ZOH (previous) interpolator.
+    """
+    # effective illuminance time (ZOH ensures exact step behavior)
+    phi = float(phi_interp_step(t - tau_latency))
 
-
-def plr_rhs(D, phi):
-    """Compute nonlinear RHS of Eq.16: dD/dt = f(D, phi)"""
-    ratio = max(1e-9, phi / 1.0)
+    # Eq. 16
+    ratio = max(1e-9, phi)
     rhs = 5.2 - 0.45 * np.log(ratio)
 
     arg = np.clip((D - 4.9) / 3.0, -0.9999, 0.9999)
     mech = 2.3026 * np.arctanh(arg)
 
-    return rhs - mech  # dD/dt
+    dDdt = rhs - mech
 
-
-def rk4_step(D, dt_eff, phi, S):
-    """
-    One RK4 step for Eq.16 with asymmetric speed (Eq.17).
-    dt_eff is already the post-onset fractional step.
-    """
-
-    # Determine constriction vs dilation
-    dDdt0 = plr_rhs(D, phi)
-    if dDdt0 < 0:
-        # constriction (fast)
-        dt_dyn = dt_eff / max(1e-9, S)
+    # Eq. 17 asymmetric speed
+    if dDdt < 0:
+        return dDdt / S
     else:
-        # dilation (3× slower)
-        dt_dyn = dt_eff / max(1e-9, 3.0 * S)
-
-    # RK4 sub-steps
-    k1 = plr_rhs(D, phi)
-    k2 = plr_rhs(D + 0.5 * dt_dyn * k1, phi)
-    k3 = plr_rhs(D + 0.5 * dt_dyn * k2, phi)
-    k4 = plr_rhs(D + dt_dyn * k3, phi)
-
-    return D + (dt_dyn / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        return dDdt / (3.0 * S)
 
 
-def rk4_step_with_delay(D, t, dt, time_array, phi_arr, tau_latency, S):
-    """RK4 single step from t -> t+dt.
-    Uses phi_at(t_sub - tau) for each sub-time."""
-    # k1 at t
-    phi_k1 = phi_at(t - tau_latency, time_array, phi_arr)
-    k1 = plr_rhs(D, phi_k1, S)
-
-    # k2 at t + dt/2
-    D_k2 = D + 0.5 * dt * k1
-    phi_k2 = phi_at((t + 0.5 * dt) - tau_latency, time_array, phi_arr)
-    k2 = plr_rhs(D_k2, phi_k2, S)
-
-    # k3 at t + dt/2 (use D_k3 estimate)
-    D_k3 = D + 0.5 * dt * k2
-    phi_k3 = phi_at((t + 0.5 * dt) - tau_latency, time_array, phi_arr)
-    k3 = plr_rhs(D_k3, phi_k3, S)
-
-    # k4 at t + dt
-    D_k4 = D + dt * k3
-    phi_k4 = phi_at((t + dt) - tau_latency, time_array, phi_arr)
-    k4 = plr_rhs(D_k4, phi_k4, S)
-
-    return D + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-
-
-def simulate_dynamics_rk4(phi_arr, time, D0, tau_latency, S):
+def simulate_dynamics_rk45(phi_arr, time, D0, tau_latency, S, rtol=1e-6, atol=1e-8):
     """
-    RK4 solver with *continuous latency* and *fractional sub-stepping*.
-
-    phi_arr : illuminance at each sample time (before latency shift)
-    tau_latency : physiological latency (seconds)
+    Integrate Eq.16 (with Eq.17 speed scaling) using solve_ivp (RK45) with
+    zero-order-hold interpolation of the stimulus to avoid pre-onset ramps.
     """
+    # build step interpolator (ZOH / previous)
+    phi_interp_step = interp1d(
+        time,
+        phi_arr,
+        kind="previous",  #! This importent! Otherwise, fractional onset time is not handled correctly.
+        bounds_error=False,
+        fill_value=(phi_arr[0], phi_arr[-1]),
+        assume_sorted=True,
+    )
 
-    n = len(time)
-    D = np.zeros(n)
-    D[0] = D0
+    t0 = float(time[0])
+    tf = float(time[-1])
 
-    # Create φ_delayed(t) as a continuous function --------------------------------------
-    # For a sample at time t_i, the effective light is φ(t_i - tau)
-    # We implement this with linear interpolation for continuity.
-    t = time
+    sol = solve_ivp(
+        fun=lambda t, y: plr_rhs_with_latency(t, y, phi_interp_step, tau_latency, S),
+        t_span=(t0, tf),
+        y0=np.array([float(D0)]),
+        method="RK45",
+        t_eval=time,
+        rtol=rtol,
+        atol=atol,
+        max_step=(time[1] - time[0]),  # keep solver step <= sampling interval
+    )
 
-    def phi_delayed(tq):
-        u = tq - tau_latency
-        if u <= t[0]:
-            return phi_arr[0]
-        if u >= t[-1]:
-            return phi_arr[-1]
-        j = np.searchsorted(t, u) - 1
-        j = max(0, min(j, n - 2))
-        # linear interpolation
-        w = (u - t[j]) / (t[j + 1] - t[j])
-        return (1 - w) * phi_arr[j - 1] + w * phi_arr[j]
+    if not sol.success:
+        raise RuntimeError(f"ODE solver failed: {sol.message}")
 
-    # Main integration loop --------------------------------------------------------------
-    for i in range(1, n):
-        t0 = t[i - 1]
-        t1 = t[i]
-        dt = t1 - t0
-
-        # Determine if φ_delayed changes inside (t0, t1)
-        # This happens if delayed time (t - tau) crosses a sample boundary.
-        # We approximate by checking φ at t0+epsilon and t1-epsilon.
-        phi0 = phi_delayed(t0)
-        phi1 = phi_delayed(t1)
-
-        if phi0 == phi1:
-            # No change: a single RK4 step
-            D[i] = rk4_step(D[i - 1], dt, phi0, S)
-
-        else:
-            # φ changes somewhere inside this interval → find the crossing time
-            # Solve phi_delayed(t_cross) = new value by searching between t0 and t1
-            # Do a binary search for the transition point.
-
-            lo = t0
-            hi = t1
-            for _ in range(25):
-                mid = 0.5 * (lo + hi)
-                if abs(phi_delayed(mid) - phi0) < 1e-12:
-                    lo = mid
-                else:
-                    hi = mid
-            t_cross = 0.5 * (lo + hi)
-
-            # split into Δt1 (before change), Δt2 (after change)
-            dt1 = t_cross - t0
-            dt2 = t1 - t_cross
-
-            # integrate over Δt1 with φ0
-            Dmid = rk4_step(D[i - 1], dt1, phi0, S)
-
-            # integrate over Δt2 with φ1
-            D[i] = rk4_step(Dmid, dt2, phi1, S)
-
-    return D
+    return sol.y[0]
 
 
 def _compute_metrics_from_trace(time, D, stim_time, led_duration, tau_latency):
@@ -244,7 +152,7 @@ def tune_S(
     w = dict(avg=1.0, maxc=1.0, dil=1.0, t75=0.5)
 
     def loss_for_S(S):
-        D = simulate_dynamics_rk4(phi, time, D_max, tau_latency, S)
+        D = simulate_dynamics_rk45(phi, time, D_max, tau_latency, S)
         metrics = _compute_metrics_from_trace(
             time, D, stim_time, led_duration, tau_latency
         )
@@ -315,7 +223,7 @@ def _find_required_phi(
     def min_D_for_phi(phi_cand):
         phi_arr = np.full_like(time, phi_baseline)
         phi_arr[on_mask] = phi_cand
-        D_sim = simulate_dynamics_rk4(phi_arr, time, D0, tau_latency, S)
+        D_sim = simulate_dynamics_rk45(phi_arr, time, D0, tau_latency, S)
         return D_sim.min()
 
     # find an upper bound that achieves target (exponential expansion)
@@ -408,7 +316,7 @@ def simulate_plr_eq16_population(
     delay_samples = int(max(0, round(tau_latency / dt)))
 
     # integrate with Eq17 dynamics
-    D_clean = simulate_dynamics_rk4(phi, time, D_max, tau_latency, S)
+    D_clean = simulate_dynamics_rk45(phi, time, D_max, tau_latency, S)
 
     # add hippus + noise
     hippus_freq = np.random.uniform(0.05, 0.3)
