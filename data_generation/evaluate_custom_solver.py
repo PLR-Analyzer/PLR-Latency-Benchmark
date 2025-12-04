@@ -1,10 +1,33 @@
-from test import simulate_dynamics_rk45
-
 import numpy as np
 from matplotlib import pyplot as plt
-from pamplona_model import diameter_from_phi, plr_rhs_with_latency
+from pamplona_model import diameter_from_phi, phi_from_diameter, plr_rhs_with_latency
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
+
+
+def blondels_to_lumens(blondels):
+    """Convert Blondel units to lumens.
+
+    Based on formula from Pamplona et al..
+    """
+    return blondels * 10e-6
+
+
+def blondels_to_phi(blondels):
+
+    D = 4.9 - 3 * np.tanh(0.4 * (np.log10(blondels)) - 0.5)
+    return np.pi * (D / 2) ** 2 * blondels * 10e-6
+
+
+def blondels_to_footlamberts(blondels):
+    return blondels * 0.0929
+
+
+def calc_latency(R: int, L_fL):
+    """
+    Based on equation 1 from Pamplona et al. 2009.
+    """
+    return 253 - 14 * np.log(L_fL) + 70 * R - 29 * R * np.log(L_fL)
 
 
 def custom_solver(phi_arr, time, D0, tau_latency):
@@ -30,7 +53,7 @@ def custom_solver(phi_arr, time, D0, tau_latency):
     for i in range(1, n):
         t = float(time[i - 1])
 
-        dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_latency)
+        dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, latency)
         D[i] = D[i - 1] + dDdt * dt
 
     return D
@@ -77,46 +100,69 @@ def rk45_solver(phi_arr, time, D0, tau_latency, rtol=1e-6, atol=1e-8):
 
 
 if __name__ == "__main__":
-    stim_start = 500
-    stim_duration = 1000
+    stim_changes = [200, 2500, 4200, 7000]
+    stim_values = [10e-2, 10e2, 10 ** (-0.5), 10]
+
     latency = 200
 
     # 5 seconds PLR with 60 Hz
     sample_rate = 60
-    sim_duration = 5000
-    n = sample_rate * sim_duration // 1000
-    time = np.linspace(0, sim_duration, n)
+    duration = 9000
+    n = sample_rate * duration // 1000
+    time = np.linspace(0, duration, n)
 
-    phi_arr = phi = np.full(n, 91e-06)  # 140 lux baseline
-    phi_stim = 540e-06  # 1000 lux stimulus
-    on_mask = (time >= stim_start) & (time < stim_start + stim_duration)
-    phi_arr[on_mask] = phi_stim
+    phi_arr = phi = np.full(n, blondels_to_lumens(stim_values[1]))  # 140 lux baseline
+    stim_mask1 = (time >= stim_changes[0]) & (time < stim_changes[1])
+    stim_mask2 = (time >= stim_changes[1]) & (time < stim_changes[2])
+    stim_mask3 = (time >= stim_changes[2]) & (time < stim_changes[3])
+    stim_mask4 = time >= stim_changes[3]
+
+    phi_arr[stim_mask1] = blondels_to_lumens(stim_values[0])
+    phi_arr[stim_mask2] = blondels_to_lumens(stim_values[1])
+    phi_arr[stim_mask3] = blondels_to_lumens(stim_values[2])
+    phi_arr[stim_mask4] = blondels_to_lumens(stim_values[3])
 
     # Diameter from custom solver
-    D1 = custom_solver(phi_arr, time, diameter_from_phi(phi[0]), latency)
-    D2 = rk45_solver(phi_arr, time, diameter_from_phi(phi[0]), latency)
-    # print(len(time), len(D), D[-1], time[-1])
+    D1 = custom_solver(
+        phi_arr, time, diameter_from_phi(blondels_to_lumens(stim_values[1])), latency
+    )
+    D2 = rk45_solver(
+        phi_arr, time, diameter_from_phi(blondels_to_lumens(stim_values[1])), latency
+    )
 
     plt.figure()
     plt.plot(time, D1, label="Simulated Diameter D1")
     plt.plot(time, D2, label="Simulated Diameter D2")
-    # plt.scatter(time, D)
     plt.xlabel("Time (s)")
     plt.ylabel("Diameter (mm)")
     plt.title("PLR Simulation Test")
     plt.axvspan(
-        stim_start,
-        stim_start + stim_duration,
-        color="yellow",
+        stim_changes[0],
+        stim_changes[1],
+        color="coral",
         alpha=0.2,
-        label="Stimulus",
+        label="$10^{-2}$blondel",
     )
-    plt.axvline(stim_start + latency, color="red", linestyle="--", label="Latency")
-    plt.axvline(
-        stim_start + stim_duration + latency,
-        color="red",
-        linestyle="--",
-        label="Latency",
+    plt.axvspan(
+        stim_changes[1],
+        stim_changes[2],
+        color="gold",
+        alpha=0.2,
+        label="$10^{2}$blondel",
+    )
+    plt.axvspan(
+        stim_changes[2],
+        stim_changes[3],
+        color="powderblue",
+        alpha=0.2,
+        label="$10^{-0.5}$blondel",
+    )
+    plt.axvspan(
+        stim_changes[3],
+        duration,
+        color="fuchsia",
+        alpha=0.2,
+        label="$10$blondel",
     )
     plt.legend()
     plt.grid()
