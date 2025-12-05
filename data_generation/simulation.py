@@ -29,7 +29,7 @@ def find_required_phi(
     def min_D_for_phi(phi_cand):
         phi_arr = np.full_like(time, phi_baseline)
         phi_arr[on_mask] = phi_cand
-        D_sim = simulate_dynamics_euler(phi_arr, time, D0, tau_latency, S)
+        D_sim = simulate_dynamics_euler(phi_arr, time, D0, S)
         return D_sim.min()
 
     # find an upper bound that achieves target (exponential expansion)
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     )
     phi_arr[on_mask] = phi_stim
 
-    D = simulate_dynamics_euler(phi_arr, time, D_max, tau_latency, S)
+    D = simulate_dynamics_euler(phi_arr, time, D_max, S)
 
     # r_l = np.random.random()
     # print(f"Using r_I = {r_l:.4f} for individual variability adjustment")

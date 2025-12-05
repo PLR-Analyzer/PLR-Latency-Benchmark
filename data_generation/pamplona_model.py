@@ -68,7 +68,7 @@ def plr_rhs_with_latency(t, D, phi_interp_step, tau_latency, phi_ref=4.8118e-10)
     return rhs / dMdD(D)
 
 
-def simulate_dynamics_euler(phi_arr, time, D0, tau_latency, S):
+def simulate_dynamics_euler(phi_arr, time, D0, S):
     """
     Integrate Eq.16 (with Eq.17 speed scaling) using simple Euler method with
     zero-order-hold interpolation of the stimulus to avoid pre-onset ramps.
