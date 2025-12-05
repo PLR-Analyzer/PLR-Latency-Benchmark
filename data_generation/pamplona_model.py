@@ -3,6 +3,21 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
 
+def calc_latency(R: int, L_fL):
+    """
+    Based on equation 1 from Pamplona et al. 2009.
+    """
+    return 253 - 14 * np.log(L_fL) + 70 * R - 29 * R * np.log(L_fL)
+
+
+def blondels_to_footlamberts(blondels):
+    return blondels * 0.0929
+
+
+def phi_to_blondels(phi):
+    return phi / 10e-6
+
+
 def diameter_from_phi(phi, phi_ref=4.8118e-10):
     """
     Uses equation 14 and 15 from Pamplona et al. 2009 to compute steady-state
@@ -57,6 +72,8 @@ def simulate_dynamics_euler(phi_arr, time, D0, tau_latency, S):
     """
     Integrate Eq.16 (with Eq.17 speed scaling) using simple Euler method with
     zero-order-hold interpolation of the stimulus to avoid pre-onset ramps.
+    tau_latency is computed dynamically based on stimulus intensity and capped
+    at the time since the last stimulus change.
     """
     dt = float((time[1] - time[0]) / S)
     n = len(time)
@@ -73,28 +90,36 @@ def simulate_dynamics_euler(phi_arr, time, D0, tau_latency, S):
         assume_sorted=True,
     )
 
-    increasing_counter = 0
+    # Track the last stimulus change time
+    last_phi_change_time = float(time[0])
+    current_phi = float(phi_arr[0])
+
     for i in range(1, n):
         t = float(time[i - 1])
 
-        dD_test = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_latency)
-        increasing = dD_test > 0
-        # dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_latency, S)
-        if increasing:
-            increasing_counter += float(time[1] - time[0])
-            # D increasing → slow down
-            dDdt = plr_rhs_with_latency(
-                t,
-                D[i - 1],
-                phi_interp_step,
-                min(tau_latency + increasing_counter, 3 * tau_latency),
-            )
-            if dDdt > 0:
-                dt_c = dt / 3
+        # Check if stimulus has changed at this sample
+        new_phi = float(phi_arr[i])
+        if new_phi != current_phi:
+            last_phi_change_time = t
+            current_phi = new_phi
+
+        # Time elapsed since last stimulus change
+        time_since_change = t - last_phi_change_time
+
+        # Compute current stimulus intensity in foot-lamberts
+        current_stimulus_fL = blondels_to_footlamberts(phi_to_blondels(current_phi))
+
+        # Compute tau_latency dynamically based on stimulus intensity
+        tau_latency_dynamic = calc_latency(0.4, current_stimulus_fL)
+
+        # Cap tau_latency at time since last stimulus change
+        tau_latency = min(tau_latency_dynamic, time_since_change)
+
+        dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_latency)
+
+        if dDdt > 0:
+            dt_c = dt / 3
         else:
-            increasing_counter = 0
-            # D decreasing → normal speed
-            dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_latency)
             dt_c = dt
         D[i] = D[i - 1] + dDdt * dt_c
 
