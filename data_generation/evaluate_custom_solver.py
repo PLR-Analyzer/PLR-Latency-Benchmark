@@ -158,10 +158,30 @@ if __name__ == "__main__":
         if ax is axes[0]:
             ax.set_ylabel("Diameter (mm)")
 
-        ax.axvspan(stim_changes[0], stim_changes[1], color="coral", alpha=0.2)
-        ax.axvspan(stim_changes[1], stim_changes[2], color="gold", alpha=0.2)
-        ax.axvspan(stim_changes[2], stim_changes[3], color="powderblue", alpha=0.2)
-        ax.axvspan(stim_changes[3], duration, color="fuchsia", alpha=0.2)
+        ax.axvspan(
+            stim_changes[0],
+            stim_changes[1],
+            color="coral",
+            alpha=0.2,
+            label="$10^{-2}$blondel",
+        )
+        ax.axvspan(
+            stim_changes[1],
+            stim_changes[2],
+            color="gold",
+            alpha=0.2,
+            label="$10^{2}$blondel",
+        )
+        ax.axvspan(
+            stim_changes[2],
+            stim_changes[3],
+            color="powderblue",
+            alpha=0.2,
+            label="$10^{-0.5}$blondel",
+        )
+        ax.axvspan(
+            stim_changes[3], duration, color="fuchsia", alpha=0.2, label="$10$blondel"
+        )
         ax.legend()
         ax.grid()
 
