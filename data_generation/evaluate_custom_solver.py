@@ -162,28 +162,86 @@ if __name__ == "__main__":
             stim_changes[0],
             stim_changes[1],
             color="coral",
-            alpha=0.2,
+            alpha=0.1,
             label="$10^{-2}$blondel",
         )
         ax.axvspan(
             stim_changes[1],
             stim_changes[2],
             color="gold",
-            alpha=0.2,
+            alpha=0.1,
             label="$10^{2}$blondel",
         )
         ax.axvspan(
             stim_changes[2],
             stim_changes[3],
             color="powderblue",
-            alpha=0.2,
+            alpha=0.1,
             label="$10^{-0.5}$blondel",
         )
         ax.axvspan(
-            stim_changes[3], duration, color="fuchsia", alpha=0.2, label="$10$blondel"
+            stim_changes[3], duration, color="fuchsia", alpha=0.1, label="$10$blondel"
         )
         ax.legend()
         ax.grid()
 
+    plt.tight_layout()
+    plt.show()
+
+    # --- Compute MSE between solvers across sample rates ---
+    rates = np.arange(5, 101, 5)
+    mses = []
+    for sample_rate in rates:
+        n = sample_rate * duration // 1000
+        time = np.linspace(0, duration, n)
+
+        phi_arr = np.full(n, blondels_to_lumens(stim_values[1]))
+        latency_arr = np.full(
+            n, calc_latency(0.4, blondels_to_footlamberts(stim_values[1]))
+        )
+        stim_mask1 = (time >= stim_changes[0]) & (time < stim_changes[1])
+        stim_mask2 = (time >= stim_changes[1]) & (time < stim_changes[2])
+        stim_mask3 = (time >= stim_changes[2]) & (time < stim_changes[3])
+        stim_mask4 = time >= stim_changes[3]
+
+        phi_arr[stim_mask1] = blondels_to_lumens(stim_values[0])
+        phi_arr[stim_mask2] = blondels_to_lumens(stim_values[1])
+        phi_arr[stim_mask3] = blondels_to_lumens(stim_values[2])
+        phi_arr[stim_mask4] = blondels_to_lumens(stim_values[3])
+
+        latency_arr[stim_mask1] = calc_latency(
+            0.4, blondels_to_footlamberts(stim_values[0])
+        )
+        latency_arr[stim_mask2] = calc_latency(
+            0.4, blondels_to_footlamberts(stim_values[1])
+        )
+        latency_arr[stim_mask3] = calc_latency(
+            0.4, blondels_to_footlamberts(stim_values[2])
+        )
+        latency_arr[stim_mask4] = calc_latency(
+            0.4, blondels_to_footlamberts(stim_values[3])
+        )
+
+        D0 = diameter_from_phi(blondels_to_lumens(stim_values[1]))
+        D1 = custom_solver(phi_arr, time, D0, latency_arr)
+        D2 = rk45_solver(phi_arr, time, D0, latency_arr)
+
+        # Ensure arrays are same length and compute MSE
+        if D1.shape != D2.shape:
+            # interpolate D2 onto D1 time grid if needed
+            D2_interp = np.interp(time, time, D2)
+        else:
+            D2_interp = D2
+
+        mse = float(np.mean((D1 - D2_interp) ** 2))
+        mses.append(mse)
+
+    # Plot MSE vs sample rate
+    plt.figure(figsize=(8, 4))
+    plt.plot(rates, mses, marker="o")
+    plt.xlabel("Sample rate (Hz)")
+    plt.ylabel("MSE between solvers ($mm^2$)")
+    plt.title("MSE between custom solver and RK45 solver from SciPy")
+    plt.grid()
     plt.tight_layout()
     plt.show()
