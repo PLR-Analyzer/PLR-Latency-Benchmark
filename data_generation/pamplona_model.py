@@ -124,38 +124,3 @@ def simulate_dynamics_euler(phi_arr, time, D0, S):
         D[i] = D[i - 1] + dDdt * dt_c
 
     return D
-
-
-def simulate_dynamics_rk45(phi_arr, time, D0, tau_latency, S, rtol=1e-6, atol=1e-8):
-    """
-    Integrate Eq.16 (with Eq.17 speed scaling) using solve_ivp (RK45) with
-    zero-order-hold interpolation of the stimulus to avoid pre-onset ramps.
-    """
-    # build step interpolator (ZOH / previous)
-    phi_interp_step = interp1d(
-        time,
-        phi_arr,
-        kind="previous",  #! This importent! Otherwise, fractional onset time is not handled correctly.
-        bounds_error=False,
-        fill_value=(phi_arr[0], phi_arr[-1]),
-        assume_sorted=True,
-    )
-
-    t0 = float(time[0])
-    tf = float(time[-1])
-
-    sol = solve_ivp(
-        fun=lambda t, y: plr_rhs_with_latency(t, y, phi_interp_step, tau_latency, S),
-        t_span=(t0 / S, tf / S),
-        y0=np.array([float(D0)]),
-        method="RK45",
-        t_eval=time / S,
-        rtol=rtol,
-        atol=atol,
-        max_step=(time[1] - time[0]),  # keep solver step <= sampling interval
-    )
-
-    if not sol.success:
-        raise RuntimeError(f"ODE solver failed: {sol.message}")
-
-    return sol.y[0]
