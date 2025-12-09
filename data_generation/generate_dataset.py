@@ -10,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-from simulation import simulate_plr_eq16_population
+import stat_values
+from simulation import simulate_sample
 
 
 def generate_synthetic_dataset(
@@ -56,12 +57,17 @@ def generate_synthetic_dataset(
         if verbose and (i + 1) % max(1, n_samples // 10) == 0:
             print(f"Generating sample {i + 1}/{n_samples}...")
 
+        D_max = stat_values.MAX_DIAMETER_MEAN
+        D_min = stat_values.MINIMUM_DIAMETER_MEAN
+
         # Simulate with a unique seed based on sample index
-        time, D_obs, D_clean, true_latency, params = simulate_plr_eq16_population(
+        time, D_obs, D_clean, true_latency, params = simulate_sample(
             duration=duration,
             fps=fps,
             stim_time=stim_time,
-            led_duration=led_duration,
+            stim_duration=led_duration,
+            D_min=D_min,
+            D_max=D_max,
             seed=i,  # Deterministic seed based on index
             noise_sd=0.03,
             drift_amp=0.05,
@@ -115,28 +121,28 @@ if __name__ == "__main__":
         "-d",
         "--duration",
         type=float,
-        default=5.0,
+        default=stat_values.DURATION,
         help="Duration of each recording in seconds (default: 5.0)",
     )
     parser.add_argument(
         "-f",
         "--fps",
         type=float,
-        default=32.0,
+        default=stat_values.FPS,
         help="Sampling rate in fps (default: 25.0)",
     )
     parser.add_argument(
         "-s",
         "--stim-time",
         type=float,
-        default=0.5,
+        default=stat_values.LIGHT_STIMULUS_START,
         help="Time when stimulus turns on in seconds (default: 0.5)",
     )
     parser.add_argument(
         "-l",
         "--led-duration",
         type=float,
-        default=0.167,
+        default=stat_values.LIGHT_STIMULUS_DURATION,
         help="Duration of LED pulse in seconds (default: 0.167)",
     )
 
