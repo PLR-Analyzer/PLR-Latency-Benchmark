@@ -8,6 +8,7 @@ from pamplona_model import (
     phi_to_blondels,
     simulate_dynamics_euler,
 )
+from variability_curves import apply_isocurve
 
 
 def find_required_phi(
@@ -123,9 +124,9 @@ if __name__ == "__main__":
 
     D = simulate_dynamics_euler(phi_arr, time, D_max, S)
 
-    # r_l = np.random.random()
-    # print(f"Using r_I = {r_l:.4f} for individual variability adjustment")
-    # D = apply_isocurve(D, r_l)
+    r_l = np.random.random()
+    print(f"Using r_I = {r_l:.4f} for individual variability adjustment")
+    D = apply_isocurve(D, r_l)
 
     # compute constriction metrics to validate fit
     avg_v, max_v = _compute_constriction_metrics(time, D, stim_time, latency)
