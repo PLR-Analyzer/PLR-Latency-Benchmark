@@ -23,6 +23,8 @@ print("C_bD coefficients:", C_bD)
 plt.plot(lum, C_b, label="C_b")
 plt.plot(lum, C_m, label="C_m")
 plt.plot(lum, C_t, label="C_t")
+plt.plot(lum, C_tD, label="C_tD")
+plt.plot(lum, C_bD, label="C_bD")
 plt.xlabel("Log Luminosity")
 plt.ylabel("Pupil Diameter (mm)")
 
