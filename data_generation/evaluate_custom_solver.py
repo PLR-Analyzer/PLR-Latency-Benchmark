@@ -48,7 +48,7 @@ def custom_solver(phi_arr, time, D0, tau_arr):
     for i in range(1, n):
         t = float(time[i - 1])
 
-        dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_arr[i])
+        dDdt = plr_rhs_with_latency(D[i - 1], float(phi_interp_step(t - tau_arr[i])))
         D[i] = D[i - 1] + dDdt * dt
 
     return D
@@ -87,7 +87,8 @@ def rk45_solver(phi_arr, time, D0, tau_arr, rtol=1e-6, atol=1e-8):
 
     sol = solve_ivp(
         fun=lambda t, y: plr_rhs_with_latency(
-            t, y, phi_interp_step, tau_interp_step(t) / 600
+            y,
+            phi_interp_step(t - tau_interp_step(t) / 600),
         ),
         t_span=(t0, tf),
         y0=np.array([float(D0)]),

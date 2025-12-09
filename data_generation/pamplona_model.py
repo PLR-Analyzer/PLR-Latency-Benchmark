@@ -50,17 +50,8 @@ def dMdD(D):
     return 1.0 / (3 * (1 - u * u))
 
 
-def plr_rhs_with_latency(t, D, phi_interp_step, tau_latency, phi_ref=4.8118e-10):
-    """
-    RHS for dD/dt including:
-    - latency t - tau_latency
-    - nonlinear iris mechanics (atanh term)
-    - asymmetric S scaling (Eq 17)
-    phi_interp_step must be a ZOH (previous) interpolator.
-    """
+def plr_rhs_with_latency(D, phi, phi_ref=4.8118e-10):
     # effective illuminance time
-    phi = float(phi_interp_step(t - tau_latency))
-
     M_D = np.arctanh((D - 4.9) / 3)
 
     rhs = 5.2 - 0.45 * np.log(phi / phi_ref) - 2.3026 * M_D
@@ -77,11 +68,11 @@ def simulate_dynamics_euler(phi_arr, time, D0, S):
     """
     dt = float((time[1] - time[0]) / S)
     n = len(time)
-    D = np.empty(n, dtype=np.float64)
+    D = np.zeros(n, dtype=np.float64)
     D[0] = float(D0)
 
     # build step interpolator (ZOH / previous)
-    phi_interp_step = interp1d(
+    phi_interp = interp1d(
         time,
         phi_arr,
         kind="previous",  #! This importent! Otherwise, fractional onset time is not handled correctly.
@@ -90,37 +81,67 @@ def simulate_dynamics_euler(phi_arr, time, D0, S):
         assume_sorted=True,
     )
 
-    # Track the last stimulus change time
-    last_phi_change_time = float(time[0])
+    # initial stimulus state
     current_phi = float(phi_arr[0])
+    current_stim_fL = blondels_to_footlamberts(phi_to_blondels(current_phi))
+
+    # Active latency window
+    active_latency = calc_latency(0.4, current_stim_fL)
+    active_latency_start = float(time[0])
+    # sample_phi_at_latency_start must be the phi value before the change that created the latency
+    sample_phi_at_latency_start = current_phi
+
+    # pending latency stores (tau_pending, phi_before_pending)
+    pending_latency = None
 
     for i in range(1, n):
         t = float(time[i - 1])
-
-        # Check if stimulus has changed at this sample
         new_phi = float(phi_arr[i])
+
+        # detect stimulus change at this sample
         if new_phi != current_phi:
-            last_phi_change_time = t
+            # phi_before is the stimulus value before this change
+            phi_before = current_phi
             current_phi = new_phi
 
-        # Time elapsed since last stimulus change
-        time_since_change = t - last_phi_change_time
+            # compute latency for the new stimulus level
+            new_fL = blondels_to_footlamberts(phi_to_blondels(new_phi))
+            tau_new = calc_latency(0.4, new_fL)
 
-        # Compute current stimulus intensity in foot-lamberts
-        current_stimulus_fL = blondels_to_footlamberts(phi_to_blondels(current_phi))
+            if tau_new <= active_latency:
+                # adopt immediately (shorter latency) and anchor to phi_before
+                active_latency = tau_new
+                active_latency_start = t
+                sample_phi_at_latency_start = phi_before
+                pending_latency = None
+            else:
+                # longer latency: store pending along with its phi_before
+                pending_latency = (tau_new, phi_before)
 
-        # Compute tau_latency dynamically based on stimulus intensity
-        tau_latency_dynamic = calc_latency(0.4, current_stimulus_fL)
+        # if active latency window finished, adopt pending (if any)
+        if pending_latency is not None:
+            tau_pending, phi_before_pending = pending_latency
+            if t >= active_latency_start + active_latency:
+                active_latency = tau_pending
+                active_latency_start = t
+                # anchor to the phi before the pending change
+                sample_phi_at_latency_start = phi_before_pending
+                pending_latency = None
 
-        # Cap tau_latency at time since last stimulus change
-        tau_latency = min(tau_latency_dynamic, time_since_change)
-
-        dDdt = plr_rhs_with_latency(t, D[i - 1], phi_interp_step, tau_latency)
-
-        if dDdt > 0:
-            dt_c = dt / 3
+        # compute delayed-sampling time and choose phi_delayed
+        t_delay = t - active_latency
+        # If t_delay is earlier than the active_latency_start, we must use the anchored phi
+        if t_delay < active_latency_start:
+            phi_delayed = sample_phi_at_latency_start
         else:
-            dt_c = dt
+            phi_delayed = float(phi_interp(t_delay))
+
+        # compute derivative using the delayed phi (your RHS function)
+        dDdt = plr_rhs_with_latency(D[i - 1], phi_delayed)
+
+        # asymmetric speed scaling
+        dt_c = dt / 3.0 if dDdt > 0 else dt
+
         D[i] = D[i - 1] + dDdt * dt_c
 
     return D
