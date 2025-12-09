@@ -1,7 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import stat_values
-from pamplona_model import phi_from_diameter, simulate_dynamics_euler
+from pamplona_model import (
+    blondels_to_footlamberts,
+    calc_latency,
+    phi_from_diameter,
+    phi_to_blondels,
+    simulate_dynamics_euler,
+)
 
 
 def find_required_phi(
@@ -83,9 +89,6 @@ def _compute_constriction_metrics(time, D, stim_time, tau_latency):
 
 if __name__ == "__main__":
     stim_time = 500
-    tau_latency = np.random.normal(
-        stat_values.CONSTRICTION_LATENCY_MEAN, stat_values.CONSTRICTION_LATENCY_STD
-    )
 
     n = int(round(stat_values.DURATION * stat_values.FPS)) + 1
     n = stat_values.DURATION  # increase resolution for better accuracy
@@ -115,6 +118,8 @@ if __name__ == "__main__":
         max_factor=1e6,
     )
     phi_arr[on_mask] = phi_stim
+    latency_ref = calc_latency(0.4, blondels_to_footlamberts(phi_to_blondels(phi[0])))
+    latency = calc_latency(0.4, blondels_to_footlamberts(phi_to_blondels(phi_stim)))
 
     D = simulate_dynamics_euler(phi_arr, time, D_max, S)
 
@@ -123,10 +128,11 @@ if __name__ == "__main__":
     # D = apply_isocurve(D, r_l)
 
     # compute constriction metrics to validate fit
-    avg_v, max_v = _compute_constriction_metrics(time, D, stim_time, tau_latency)
+    avg_v, max_v = _compute_constriction_metrics(time, D, stim_time, latency)
     print(
         f"Baseline phi: {phi_from_diameter(D_max) * 1e6:.3e}\tStimulus phi: {phi_stim * 1e6:.3e} lux"
     )
+    print(f"Calculated latency:", latency, f"Reference latency:", latency_ref)
     print(f"Simulated avg constriction velocity: {avg_v:.3f} mm/s")
     print(f"Simulated max constriction velocity: {max_v:.3f} mm/s")
     print(
@@ -155,10 +161,10 @@ if __name__ == "__main__":
         stim_time,
         stim_time + stat_values.LIGHT_STIMULUS_DURATION,
         color="yellow",
-        alpha=0.2,
+        alpha=0.5,
         label="Stimulus",
     )
-    plt.axvline(stim_time + tau_latency, color="red", linestyle="--", label="Latency")
+    plt.axvline(stim_time + latency, color="red", linestyle="--", label="Latency")
     plt.legend()
     plt.grid()
     plt.show()
