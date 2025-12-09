@@ -1,0 +1,32 @@
+"""
+This file contains the statistical values from José E Capó-Aponte.
+"""
+
+# Parameters for the non-TBI group
+MAX_DIAMETER_MEAN = 5.63  # in mm
+MAX_DIAMETER_STD = 0.79  # in mm
+
+MINIMUM_DIAMETER_MEAN = 3.78  # in mm
+MINIMUM_DIAMETER_STD = 0.56  # in mm
+
+PERCENT_CONSTRICTION_MEAN = 32.90  # in %
+PERCENT_CONSTRICTION_STD = 3.09  # in %
+
+CONSTRICTION_LATENCY_MEAN = 211.75  # in ms
+CONSTRICTION_LATENCY_STD = 9.51  # in ms
+
+PRT75_MEAN = 1.77  # in s
+PRT75_STD = 0.38  # in s
+
+AVG_CONSTRICTION_VELOCITY_MEAN = -4.11  # in mm/s
+AVG_CONSTRICTION_VELOCITY_STD = 0.44  # in mm/s
+
+MAX_CONSTRICTION_VELOCITY_MEAN = -5.15  # in mm/s
+MAX_CONSTRICTION_VELOCITY_STD = 0.99  # in mm/s
+
+DILATION_VELOCITY_MEAN = 1.02  # in mm/s
+DILATION_VELOCITY_STD = 0.17  # in mm/s
+
+DURATION = 5000  # in ms
+LIGHT_STIMULUS_DURATION = 167  # in s
+FPS = 32.0  # in Hz
