@@ -127,13 +127,13 @@ def simulate_sample(
 
     D = simulate_dynamics_euler(phi_arr, time, D_max, S)
 
-    r_l = np.random.random()
+    r_l = np.random.uniform(0.0, 1.0)
     D = apply_isocurve(D, r_l)
 
     # add slow drift + measurement noise
-    hippus_freq = np.random.uniform(0.05, 0.3)
+    hippus_freq = np.random.uniform(0.05, 0.3)  # Hz
     drift = drift_amp * np.sin(
-        2 * np.pi * hippus_freq * time + np.random.uniform(0, 2 * np.pi)
+        2 * np.pi * hippus_freq * (time / 1000.0) + np.random.uniform(0, 2 * np.pi)
     )
     noise = np.random.normal(0, noise_sd, size=n)
 

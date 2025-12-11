@@ -57,20 +57,20 @@ def generate_synthetic_dataset(
         if verbose and (i + 1) % max(1, n_samples // 10) == 0:
             print(f"Generating sample {i + 1}/{n_samples}...")
 
-        D_max = stat_values.MAX_DIAMETER_MEAN
-        D_min = stat_values.MINIMUM_DIAMETER_MEAN
+        D_max = 5.0
+        D_min = 4.0
 
         # Simulate with a unique seed based on sample index
         time, D_obs, D_clean, true_latency, params = simulate_sample(
             duration=duration,
             fps=fps,
             stim_time=stim_time,
-            stim_duration=led_duration,
+            stim_duration=200,
             D_min=D_min,
             D_max=D_max,
             seed=i,  # Deterministic seed based on index
-            noise_sd=0.03,
-            drift_amp=0.05,
+            noise_sd=0,  # 0.03,
+            drift_amp=0.2,
         )
 
         # Create filename with timestamp for uniqueness
