@@ -10,8 +10,9 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import stat_values
-from simulation import simulate_sample
+
+from data_generation import stat_values
+from data_generation.simulation import simulate_sample
 
 
 def generate_synthetic_dataset(

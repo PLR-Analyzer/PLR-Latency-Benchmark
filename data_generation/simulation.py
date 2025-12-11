@@ -1,14 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import stat_values
-from pamplona_model import (
+
+from data_generation import stat_values
+from data_generation.pamplona_model import (
     blondels_to_footlamberts,
     calc_latency,
     phi_from_diameter,
     phi_to_blondels,
     simulate_dynamics_euler,
 )
-from variability_curves import apply_isocurve
+from data_generation.variability_curves import apply_isocurve
 
 # S is a constant that affects the constriction/dilation velocity and
 # varies among individuals
