@@ -100,8 +100,6 @@ class LatencyMethods:
         baseline_mean = np.mean(signal[before_mask])
         baseline_std = np.std(signal[before_mask])
 
-        print(baseline_mean, baseline_std)
-
         threshold_val = baseline_mean - 3 * baseline_std
         crossing_idx = np.where(signal[after_mask] < threshold_val)[0]
         if len(crossing_idx) == 0:
