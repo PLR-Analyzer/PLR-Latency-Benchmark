@@ -69,6 +69,7 @@ class PlotWidget(QtWidgets.QWidget):
                 true_latency, color="magenta", linestyle="--", label="True"
             )
         self.ax1.legend()
+        self.ax1.set_ylim([0, 9])
 
         # Second subplot: method-specific visualization
         self.ax2.clear()
@@ -113,6 +114,7 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+            self.ax2.set_ylim([0, 9])
         elif method_type == "piecewise":
             self.ax2.plot(t, D_obs, label="Observed", color="C0")
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -135,6 +137,57 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+            self.ax2.set_ylim([0, 9])
+        elif method_type == "exponential":
+            self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
+            self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
+            self.ax2.autoscale(False)
+
+            fit_params = method_data.get("fit_params")
+            if fit_params is not None:
+                T = fit_params["T"]
+                a1 = fit_params["a1"]
+                a2 = fit_params["a2"]
+                b2 = fit_params["b2"]
+                a3 = fit_params["a3"]
+                b3 = fit_params["b3"]
+
+                # Unified Bos (1991) model
+                dt = t - T
+                absdt = np.abs(dt)
+
+                u = 0.5 * (dt - absdt)  # pre-onset (negative branch)
+                v = 0.5 * (dt + absdt)  # post-onset (nonnegative branch)
+
+                f_pred = (
+                    a1
+                    + 0.5 * (a3 * b3 - a2 * b2) * u
+                    + a2 * np.exp(-np.clip(b2 * v, -100, 100))
+                    - a3 * np.exp(-np.clip(b3 * v, -100, 100))
+                )
+
+                # Plot unified fitted curve
+                self.ax2.plot(
+                    t,
+                    f_pred,
+                    color="green",
+                    linewidth=2,
+                    label="Unified model fit",
+                )
+
+                # Mark latency T
+                self.ax2.axvline(
+                    T,
+                    color="orange",
+                    linestyle=":",
+                    linewidth=2,
+                    label=f"Latency T={T:.3f}s",
+                )
+
+            self.ax2.set_ylabel("Diameter (mm)")
+            self.ax2.legend()
+            self.ax2.set_ylim([0, 9])
+
         elif method_type == "model_fit":
             self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -147,6 +200,7 @@ class PlotWidget(QtWidgets.QWidget):
                     )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+            self.ax2.set_ylim([0, 9])
 
         # Common elements for second subplot
         self.ax2.set_xlabel("Time (s)")

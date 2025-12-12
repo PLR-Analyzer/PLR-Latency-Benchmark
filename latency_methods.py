@@ -172,6 +172,74 @@ class LatencyMethods:
         return refined, {"type": "piecewise", "fit_lines": fit_lines}
 
     @staticmethod
+    def exponential_fit(t, signal, stim_time):
+        """
+        Bos (1991) ssecond-order mathematical model of the pupil constriction.
+        """
+
+        t = np.asarray(t, float)
+        y = np.asarray(signal, float)
+
+        # ---- Fitting window: everything before the constriction minimum ----
+        end = np.argmin(y)
+        mask = np.arange(len(t)) <= end
+        tt = t[mask]
+        yy = y[mask]
+
+        if len(tt) < 10:
+            return np.nan, {"type": "exponential", "fit_params": {}}
+
+        # ---- Simple initial guesses ----
+        T0 = stim_time  # Literature suggests a latency of ~200ms
+        a1_0 = yy[np.searchsorted(tt, stim_time)]  # value at stim time
+        a2_0 = a1_0 - yy[-1]
+        a3_0 = 0.3 * a2_0
+        b2_0 = 0.01
+        b3_0 = 0.002
+
+        p0 = np.array([T0, a1_0, a2_0, b2_0, a3_0, b3_0], float)
+
+        # ---- Bounds ----
+        lb = [stim_time, a1_0 - 5, -5 * a2_0, 0.0001, -5 * a3_0, 0.0001]
+        ub = [tt[-1] - 1.0, a1_0 + 5, 5 * a2_0, 0.1, 5 * a3_0, 0.02]
+
+        # ---- Bos model with constraints from section 4.2----
+        def model(p, ti):
+            T, a1, a2, b2, a3, b3 = p
+
+            a0 = a1 + a2 - a3
+            b0 = -a2 * b2 + a3 * b3
+
+            dt = ti - T
+            before = a0 + b0 * dt
+            after = a1 + a2 * np.exp(-b2 * dt) - a3 * np.exp(-b3 * dt)
+            return np.where(ti < T, before, after)
+
+        def residuals(p):
+            return model(p, tt) - yy
+
+        res = least_squares(residuals, p0, bounds=(lb, ub), max_nfev=4000)
+        T, a1, a2, b2, a3, b3 = res.x
+
+        # ---- Derived parameters ----
+        a0 = a1 + a2 - a3
+        b0 = -a2 * b2 + a3 * b3
+
+        return float(T), {
+            "type": "exponential",
+            "fit_params": {
+                "T": float(T),
+                "a0": float(a0),
+                "b0": float(b0),
+                "a1": float(a1),
+                "a2": float(a2),
+                "b2": float(b2),
+                "a3": float(a3),
+                "b3": float(b3),
+            },
+        }
+
+    @staticmethod
     def _flux_from_diameter(D, phi_ref=1.0):
         """Compute retinal flux φ that gives steady-state diameter D."""
         arg = np.clip((D - 4.9) / 3.0, -0.9999, 0.9999)
@@ -345,6 +413,7 @@ class LatencyMethods:
             "Min derivative (smoothed)",
             "Threshold crossing",
             "Piecewise-linear fit",
+            "Exponential fit",
             "Fit to simulation model",
         ]
 
@@ -382,6 +451,8 @@ class LatencyMethods:
             return LatencyMethods.threshold_crossing(t, signal, stim_time)
         elif method_name == "Piecewise-linear fit":
             return LatencyMethods.piecewise_linear(t, signal, stim_time)
+        elif method_name == "Exponential fit":
+            return LatencyMethods.exponential_fit(t, signal, stim_time)
         elif method_name == "Fit to simulation model":
             if led_duration is None or fps is None:
                 dt = t[1] - t[0]
