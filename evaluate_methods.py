@@ -282,7 +282,7 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
     """
     fps_list = sorted(all_results.keys())
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(16, 5))
     axes = axes.flatten()  # Flatten to 1D for easier indexing
 
     # Prepare data for each method
@@ -311,7 +311,7 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
     # Plot each metric
     colors = plt.cm.tab10(np.linspace(0, 1, len(method_names)))
 
-    for idx, metric_name in enumerate(["mae", "rmse", "median"]):
+    for idx, metric_name in enumerate(["mae", "rmse"]):
         ax = axes[idx]
         for method_idx, method in enumerate(method_names):
             values = method_data[method][metric_name]
@@ -324,42 +324,23 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
                 linewidth=2,
             )
 
+        ax.plot(
+            fps_list,
+            quant_median_per_fps,
+            marker="^",
+            label="Median Quantization Error",
+            color="darkred",
+            linewidth=2.5,
+            markersize=8,
+            linestyle="--",
+        )
+
         ax.set_xlabel("Sample Rate (fps)", fontsize=12)
         ax.set_ylabel(f"{metric_name.upper()} Error (ms)", fontsize=12)
+        ax.set_yscale("log", base=10)
         ax.set_title(f"{metric_name.upper()} vs Sample Rate", fontsize=13)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=10)
-
-    # 4th subplot: Actual quantization error (distance to nearest sample point)
-    ax = axes[3]
-    ax.plot(
-        fps_list,
-        quant_mae_per_fps,
-        marker="s",
-        label="Mean Quantization Error",
-        color="red",
-        linewidth=2.5,
-        markersize=8,
-    )
-    ax.plot(
-        fps_list,
-        quant_median_per_fps,
-        marker="^",
-        label="Median Quantization Error",
-        color="darkred",
-        linewidth=2.5,
-        markersize=8,
-        linestyle="--",
-    )
-    ax.fill_between(fps_list, quant_mae_per_fps, alpha=0.2, color="red")
-    ax.set_xlabel("Sample Rate (fps)", fontsize=12)
-    ax.set_ylabel("Quantization Error (ms)", fontsize=12)
-    ax.set_title(
-        "Actual Quantization Error vs Sample Rate\n(distance to nearest sample point)",
-        fontsize=13,
-    )
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=10)
 
     # Add overall title with parameters
     fig.suptitle(
