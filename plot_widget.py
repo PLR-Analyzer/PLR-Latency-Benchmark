@@ -18,6 +18,8 @@ class PlotWidget(QtWidgets.QWidget):
 
         self.canvas = FigureCanvas(self.fig)
         self.toolbar = NavigationToolbar(self.canvas, self)
+        # Secondary axis for method-specific plots (created on demand)
+        self.ax2_secondary = None
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.toolbar)
@@ -72,6 +74,13 @@ class PlotWidget(QtWidgets.QWidget):
         self.ax1.set_ylim([0, 9])
 
         # Second subplot: method-specific visualization
+        # Ensure any previous secondary axis is removed before clearing
+        if getattr(self, "ax2_secondary", None) is not None:
+            try:
+                self.ax2_secondary.remove()
+            except Exception:
+                pass
+            self.ax2_secondary = None
         self.ax2.clear()
         self._plot_method_specific(
             t,
@@ -201,10 +210,53 @@ class PlotWidget(QtWidgets.QWidget):
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
             self.ax2.set_ylim([0, 9])
+        elif method_type == "acceleration":
+            deriv1 = method_data.get("deriv1")
+            deriv2 = method_data.get("deriv2")
+            t_interp = method_data.get("t_interp", t)
+
+            # Plot first derivative on the left axis
+            if deriv1 is not None:
+                self.ax2.plot(
+                    t_interp,
+                    deriv1,
+                    label="1st derivative (dD/dt)",
+                    color="C2",
+                    linewidth=1.5,
+                )
+
+            # Create or reuse secondary y-axis for second derivative
+            if getattr(self, "ax2_secondary", None) is None:
+                ax2_secondary = self.ax2.twinx()
+                self.ax2_secondary = ax2_secondary
+            else:
+                ax2_secondary = self.ax2_secondary
+                ax2_secondary.cla()
+
+            if deriv2 is not None:
+                ax2_secondary.plot(
+                    t_interp,
+                    deriv2,
+                    label="2nd derivative (d²D/dt²)",
+                    color="C3",
+                    linewidth=1.5,
+                )
+
+            self.ax2.set_ylabel("dD/dt", color="C2")
+            ax2_secondary.set_ylabel("d²D/dt²", color="C3")
+            self.ax2.tick_params(axis="y", labelcolor="C2")
+            ax2_secondary.tick_params(axis="y", labelcolor="C3")
+
+            # Combine legends from both axes
+            lines1, labels1 = self.ax2.get_legend_handles_labels()
+            lines2, labels2 = ax2_secondary.get_legend_handles_labels()
+            self.ax2.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
 
         # Common elements for second subplot
         self.ax2.set_xlabel("Time (s)")
         self.ax2.axvspan(stim_time, stim_time + led_duration, color="yellow", alpha=0.2)
+
+        # Predicted and true latency lines (shown on the method plot)
         if np.isfinite(predicted_latency):
             self.ax2.axvline(
                 predicted_latency, color="red", linestyle="-", label="Predicted"
