@@ -22,6 +22,7 @@ def generate_synthetic_dataset(
     fps=25.0,
     stim_time=0.5,
     led_duration=0.167,
+    noise_sd=0.03,
     verbose=True,
 ):
     """
@@ -70,7 +71,7 @@ def generate_synthetic_dataset(
             D_min=D_min,
             D_max=D_max,
             seed=i,  # Deterministic seed based on index
-            noise_sd=0,  # 0.03,
+            noise_sd=noise_sd,
             drift_amp=0.2,
         )
 
@@ -146,6 +147,12 @@ if __name__ == "__main__":
         default=stat_values.LIGHT_STIMULUS_DURATION,
         help="Duration of LED pulse in seconds (default: 0.167)",
     )
+    parser.add_argument(
+        "--noise",
+        type=float,
+        default=0.03,
+        help="Duration of LED pulse in seconds (default: 0.03)",
+    )
 
     args = parser.parse_args()
 
@@ -156,4 +163,5 @@ if __name__ == "__main__":
         fps=args.fps,
         stim_time=args.stim_time,
         led_duration=args.led_duration,
+        noise_sd=args.noise,
     )
