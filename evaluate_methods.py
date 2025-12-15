@@ -1,9 +1,9 @@
 """
-Evaluate latency detection methods across different sample rates.
+Evaluate latency detection methods across different sample rates or noise levels.
 
-Generates synthetic PLR datasets at various sample rates and evaluates
+Generates synthetic PLR datasets at various sample rates OR noise levels and evaluates
 selected latency detection methods against ground truth latency.
-Produces a plot showing estimation error vs sample rate.
+Produces a plot showing estimation error vs the varied parameter.
 """
 
 import argparse
@@ -61,11 +61,11 @@ def evaluate_method_on_sample(
         return np.nan
 
 
-def evaluate_methods_at_fps(
+def evaluate_methods_at_params(
     fps,
+    noise_sd,
     n_samples,
     method_names,
-    noise_sd,
     D_min,
     D_max,
     duration=5000,
@@ -74,18 +74,18 @@ def evaluate_methods_at_fps(
     verbose=True,
 ):
     """
-    Generate samples at a given FPS and evaluate all methods.
+    Generate samples at given FPS and noise level and evaluate all methods.
 
     Parameters
     ----------
     fps : float
         Sampling rate in frames per second.
+    noise_sd : float
+        Standard deviation of Gaussian noise.
     n_samples : int
         Number of samples to generate.
     method_names : list of str
         Names of latency methods to evaluate.
-    noise_sd : float
-        Standard deviation of Gaussian noise.
     D_min : float
         Minimum pupil diameter for stimulus.
     D_max : float
@@ -103,13 +103,14 @@ def evaluate_methods_at_fps(
     -------
     dict
         Results with keys mapping method names to lists of errors (in ms),
-        plus "fps", "true_latencies", and "quantization_errors".
+        plus "fps", "noise_sd", "true_latencies", and "quantization_errors".
     """
     if verbose:
-        print(f"\nGenerating {n_samples} samples at {fps} fps...")
+        print(f"\nGenerating {n_samples} samples at {fps} fps, noise_sd={noise_sd}...")
 
     results = {method_name: [] for method_name in method_names}
     results["fps"] = fps
+    results["noise_sd"] = noise_sd
     results["true_latencies"] = []
     results["quantization_errors"] = []
 
@@ -121,7 +122,7 @@ def evaluate_methods_at_fps(
         time, D_obs, D_clean, true_latency, params = simulate_sample(
             duration=duration,
             fps=fps,
-            stim_time=stim_time,  # convert to seconds for simulate_sample
+            stim_time=stim_time,
             stim_duration=led_duration,
             D_min=D_min,
             D_max=D_max,
@@ -133,10 +134,9 @@ def evaluate_methods_at_fps(
         results["true_latencies"].append(true_latency)
 
         # Calculate actual quantization error: distance to nearest sample point
-        # Find the nearest sample point to true_latency (both in ms)
         idx_nearest = np.argmin(np.abs(time - true_latency))
         nearest_time = time[idx_nearest]
-        quant_error = abs(nearest_time - true_latency)  # in ms
+        quant_error = abs(nearest_time - true_latency)
         results["quantization_errors"].append(quant_error)
 
         # Evaluate each method
@@ -152,10 +152,8 @@ def evaluate_methods_at_fps(
             )
 
             if not np.isnan(latency_est):
-                # Compute error in milliseconds
                 error_ms = abs(latency_est - true_latency)
                 results[method_name].append(error_ms)
-            # If nan, we skip adding to results for this method
 
     return results
 
@@ -193,11 +191,13 @@ def compute_error_stats(errors):
     }
 
 
-def evaluate_across_fps(
-    fps_list,
+def evaluate_across_parameters(
+    param_list,
+    param_type,
     n_samples,
     method_names,
-    noise_sd,
+    fixed_fps,
+    fixed_noise,
     D_min,
     D_max,
     duration=5000,
@@ -206,18 +206,22 @@ def evaluate_across_fps(
     verbose=True,
 ):
     """
-    Evaluate methods across multiple sample rates.
+    Evaluate methods across multiple parameter values (fps or noise).
 
     Parameters
     ----------
-    fps_list : list of float
-        List of sample rates to evaluate.
+    param_list : list of float
+        List of parameter values to evaluate.
+    param_type : str
+        Either "fps" or "noise" to indicate which parameter varies.
     n_samples : int
-        Number of samples per sample rate.
+        Number of samples per parameter value.
     method_names : list of str
         Names of latency methods to evaluate.
-    noise_sd : float
-        Standard deviation of Gaussian noise.
+    fixed_fps : float
+        Fixed FPS value (used when param_type="noise").
+    fixed_noise : float
+        Fixed noise SD value (used when param_type="fps").
     D_min : float
         Minimum pupil diameter for stimulus.
     D_max : float
@@ -234,21 +238,23 @@ def evaluate_across_fps(
     Returns
     -------
     dict
-        Nested dictionary with structure:
-        {
-            fps1: {method1: errors_list, method2: errors_list, ...},
-            fps2: {method1: errors_list, method2: errors_list, ...},
-            ...
-        }
+        Nested dictionary with parameter values as keys.
     """
     all_results = {}
 
-    for fps in fps_list:
-        results = evaluate_methods_at_fps(
+    for param_value in param_list:
+        if param_type == "fps":
+            fps = param_value
+            noise_sd = fixed_noise
+        else:  # param_type == "noise"
+            fps = fixed_fps
+            noise_sd = param_value
+
+        results = evaluate_methods_at_params(
             fps,
+            noise_sd,
             n_samples,
             method_names,
-            noise_sd,
             D_min,
             D_max,
             duration,
@@ -256,23 +262,23 @@ def evaluate_across_fps(
             led_duration,
             verbose,
         )
-        all_results[fps] = results
+        all_results[param_value] = results
 
     return all_results
 
 
-def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=None):
+def plot_results(all_results, method_names, param_type, D_min, D_max, output_path=None):
     """
-    Plot error metrics across sample rates for all methods.
+    Plot error metrics across parameter values for all methods.
 
     Parameters
     ----------
     all_results : dict
-        Nested results from evaluate_across_fps.
+        Nested results from evaluate_across_parameters.
     method_names : list of str
         Names of methods being evaluated.
-    noise_sd : float
-        Noise standard deviation (for title).
+    param_type : str
+        Either "fps" or "noise".
     D_min : float
         Minimum diameter (for title).
     D_max : float
@@ -280,43 +286,51 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
     output_path : str or Path, optional
         Path to save the figure.
     """
-    fps_list = sorted(all_results.keys())
+    param_list = sorted(all_results.keys())
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 5))
-    axes = axes.flatten()  # Flatten to 1D for easier indexing
+    axes = axes.flatten()
 
     # Prepare data for each method
     method_data = {
         method: {"mae": [], "rmse": [], "median": []} for method in method_names
     }
 
-    # Collect quantization errors for the 4th subplot
-    quant_mae_per_fps = []
-    quant_median_per_fps = []
+    # Collect quantization errors
+    quant_mae_per_param = []
+    quant_median_per_param = []
 
-    for fps in fps_list:
+    for param_value in param_list:
         for method in method_names:
-            errors = all_results[fps].get(method, [])
+            errors = all_results[param_value].get(method, [])
             stats = compute_error_stats(errors)
             method_data[method]["mae"].append(stats["mae"])
             method_data[method]["rmse"].append(stats["rmse"])
             method_data[method]["median"].append(stats["median"])
 
-        # Compute quantization error stats for this fps
-        quant_errors = all_results[fps].get("quantization_errors", [])
+        # Compute quantization error stats
+        quant_errors = all_results[param_value].get("quantization_errors", [])
         quant_stats = compute_error_stats(quant_errors)
-        quant_mae_per_fps.append(quant_stats["mae"])
-        quant_median_per_fps.append(quant_stats["median"])
+        quant_mae_per_param.append(quant_stats["mae"])
+        quant_median_per_param.append(quant_stats["median"])
 
     # Plot each metric
     colors = plt.cm.tab10(np.linspace(0, 1, len(method_names)))
+
+    # Set x-axis label based on parameter type
+    if param_type == "fps":
+        xlabel = "Sample Rate (fps)"
+        param_info = f"noise_sd={all_results[param_list[0]]['noise_sd']}"
+    else:
+        xlabel = "Noise SD"
+        param_info = f"fps={all_results[param_list[0]]['fps']}"
 
     for idx, metric_name in enumerate(["mae", "rmse"]):
         ax = axes[idx]
         for method_idx, method in enumerate(method_names):
             values = method_data[method][metric_name]
             ax.plot(
-                fps_list,
+                param_list,
                 values,
                 marker="o",
                 label=method,
@@ -324,9 +338,11 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
                 linewidth=2,
             )
 
+        # Only plot quantization error for FPS variation
+        # if param_type == "fps":
         ax.plot(
-            fps_list,
-            quant_median_per_fps,
+            param_list,
+            quant_median_per_param,
             marker="^",
             label="Median Quantization Error",
             color="darkred",
@@ -335,17 +351,17 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
             linestyle="--",
         )
 
-        ax.set_xlabel("Sample Rate (fps)", fontsize=12)
+        ax.set_xlabel(xlabel, fontsize=12)
         ax.set_ylabel(f"{metric_name.upper()} Error (ms)", fontsize=12)
         ax.set_yscale("log", base=10)
-        ax.set_title(f"{metric_name.upper()} vs Sample Rate", fontsize=13)
+        ax.set_title(f"{metric_name.upper()} vs {xlabel}", fontsize=13)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=10)
 
     # Add overall title with parameters
     fig.suptitle(
-        f"Latency Estimation Error Across Sample Rates\n"
-        f"(noise_sd={noise_sd}, D_min={D_min}, D_max={D_max})",
+        f"Latency Estimation Error Across {xlabel}\n"
+        f"({param_info}, D_min={D_min}, D_max={D_max})",
         fontsize=14,
         y=0.995,
     )
@@ -360,7 +376,16 @@ def plot_results(all_results, method_names, noise_sd, D_min, D_max, output_path=
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate latency detection methods across sample rates."
+        description="Evaluate latency detection methods across sample rates or noise levels.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Vary FPS from 25 to 200 with step 25, fixed noise 0.03
+  python script.py --fps-range 25 200 25 --noise 0.03
+
+  # Vary noise from 0.01 to 0.1 with step 0.01, fixed FPS 90
+  python script.py --noise-range 0.01 0.1 0.01 --fps 90
+        """,
     )
     parser.add_argument(
         "-m",
@@ -371,28 +396,45 @@ def main():
             "Min derivative (smoothed)",
             "Velocity 2nd-order deviation",
         ],
-        help="Latency methods to evaluate (default: Min derivative, Min derivative (smoothed), Velocity 2nd-order deviation)",
+        help="Latency methods to evaluate",
     )
-    parser.add_argument(
-        "-f",
+
+    # FPS parameters
+    fps_group = parser.add_mutually_exclusive_group(required=True)
+    fps_group.add_argument(
         "--fps",
-        nargs="+",
         type=float,
-        default=[25, 30, 90, 200],
-        help="Sample rates to evaluate (default: 25 30 90 200)",
+        help="Fixed FPS value (use with --noise-range)",
     )
+    fps_group.add_argument(
+        "--fps-range",
+        nargs=3,
+        type=float,
+        metavar=("MIN", "MAX", "STEP"),
+        help="FPS range: min max step (use with --noise)",
+    )
+
+    # Noise parameters
+    noise_group = parser.add_mutually_exclusive_group(required=True)
+    noise_group.add_argument(
+        "--noise",
+        type=float,
+        help="Fixed noise SD value (use with --fps-range)",
+    )
+    noise_group.add_argument(
+        "--noise-range",
+        nargs=3,
+        type=float,
+        metavar=("MIN", "MAX", "STEP"),
+        help="Noise SD range: min max step (use with --fps)",
+    )
+
     parser.add_argument(
         "-n",
         "--num-samples",
         type=int,
         default=500,
-        help="Number of samples per sample rate (default: 500)",
-    )
-    parser.add_argument(
-        "--noise-sd",
-        type=float,
-        default=0.03,
-        help="Standard deviation of Gaussian noise (default: 0.03)",
+        help="Number of samples per parameter value (default: 500)",
     )
     parser.add_argument(
         "--D-min",
@@ -411,7 +453,7 @@ def main():
         "--output",
         type=str,
         default=None,
-        help="Output path for the plot (optional; if not provided, plot is only shown)",
+        help="Output path for the plot",
     )
     parser.add_argument(
         "-v",
@@ -422,21 +464,47 @@ def main():
 
     args = parser.parse_args()
 
+    # Validate argument combinations
+    if args.fps_range and not args.noise:
+        parser.error("--fps-range requires --noise")
+    if args.noise_range and not args.fps:
+        parser.error("--noise-range requires --fps")
+
+    # Determine which parameter varies
+    if args.fps_range:
+        param_type = "fps"
+        fps_min, fps_max, fps_step = args.fps_range
+        param_list = list(np.arange(fps_min, fps_max + fps_step / 2, fps_step))
+        fixed_fps = None
+        fixed_noise = args.noise
+        param_desc = (
+            f"FPS: {fps_min} to {fps_max} step {fps_step}, fixed noise={fixed_noise}"
+        )
+    else:  # noise_range
+        param_type = "noise"
+        noise_min, noise_max, noise_step = args.noise_range
+        param_list = list(np.arange(noise_min, noise_max + noise_step / 2, noise_step))
+        fixed_fps = args.fps
+        fixed_noise = None
+        param_desc = f"Noise: {noise_min} to {noise_max} step {noise_step}, fixed fps={fixed_fps}"
+
     print("=" * 70)
-    print("Latency Method Evaluation Across Sample Rates")
+    print("Latency Method Evaluation")
     print("=" * 70)
     print(f"Methods: {', '.join(args.methods)}")
-    print(f"Sample rates (fps): {args.fps}")
-    print(f"Samples per rate: {args.num_samples}")
-    print(f"Noise SD: {args.noise_sd}, D_min: {args.D_min}, D_max: {args.D_max}")
+    print(f"Parameter variation: {param_desc}")
+    print(f"Samples per value: {args.num_samples}")
+    print(f"D_min: {args.D_min}, D_max: {args.D_max}")
     print("=" * 70)
 
-    # Evaluate across all sample rates
-    all_results = evaluate_across_fps(
-        args.fps,
+    # Evaluate across all parameter values
+    all_results = evaluate_across_parameters(
+        param_list,
+        param_type,
         args.num_samples,
         args.methods,
-        args.noise_sd,
+        fixed_fps,
+        fixed_noise,
         args.D_min,
         args.D_max,
         verbose=args.verbose or True,
@@ -446,10 +514,13 @@ def main():
     print("\n" + "=" * 70)
     print("Summary of Results")
     print("=" * 70)
-    for fps in sorted(all_results.keys()):
-        print(f"\nFPS: {fps}")
+    for param_value in sorted(all_results.keys()):
+        if param_type == "fps":
+            print(f"\nFPS: {param_value}, Noise SD: {fixed_noise}")
+        else:
+            print(f"\nNoise SD: {param_value}, FPS: {fixed_fps}")
         for method in args.methods:
-            errors = all_results[fps].get(method, [])
+            errors = all_results[param_value].get(method, [])
             stats = compute_error_stats(errors)
             print(
                 f"  {method:40s}: MAE={stats['mae']:7.2f}ms, "
@@ -461,10 +532,10 @@ def main():
     output_file = args.output
     if output_file is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"latency_evaluation_{timestamp}.png"
+        output_file = f"latency_evaluation_{param_type}_{timestamp}.png"
 
     plot_results(
-        all_results, args.methods, args.noise_sd, args.D_min, args.D_max, output_file
+        all_results, args.methods, param_type, args.D_min, args.D_max, output_file
     )
 
 
