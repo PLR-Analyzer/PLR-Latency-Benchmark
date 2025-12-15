@@ -371,7 +371,7 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
         print(f"\nFigure saved to: {output_path}")
 
-    plt.show()
+    # plt.show()
 
 
 def main():
