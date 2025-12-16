@@ -319,7 +319,6 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         for param_value in param_list:
             for method in method_names:
                 errors = all_results[eval_value][param_value].get(method, [])
-                print(f"Errors ({method}, {param_value}):", errors)
                 stats = compute_error_stats(errors)
                 method_data[method]["mae"].append(stats["mae"])
                 method_data[method]["rmse"].append(stats["rmse"])
@@ -337,8 +336,6 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         ax = axes[idx]
         for method_idx, method in enumerate(method_names):
             values = method_data[method]["mae"]
-            print("Parameter List:", param_list)
-            print("Values:", values)
             ax.plot(
                 param_list,
                 values,
