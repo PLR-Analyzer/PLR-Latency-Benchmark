@@ -59,8 +59,8 @@ def generate_synthetic_dataset(
         if verbose and (i + 1) % max(1, n_samples // 10) == 0:
             print(f"Generating sample {i + 1}/{n_samples}...")
 
-        D_max = 5.0
-        D_min = 4.0
+        D_max = 7.0
+        D_min = 3.0
 
         # Simulate with a unique seed based on sample index
         time, D_obs, D_clean, true_latency, params = simulate_sample(

@@ -71,7 +71,7 @@ class PlotWidget(QtWidgets.QWidget):
                 true_latency, color="magenta", linestyle="--", label="True"
             )
         self.ax1.legend()
-        self.ax1.set_ylim([0, 9])
+        # self.ax1.set_ylim([0, 9])
 
         # Second subplot: method-specific visualization
         # Ensure any previous secondary axis is removed before clearing
@@ -123,7 +123,7 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
-            self.ax2.set_ylim([0, 9])
+            # self.ax2.set_ylim([0, 9])
         elif method_type == "piecewise":
             self.ax2.plot(t, D_obs, label="Observed", color="C0")
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -146,7 +146,7 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
-            self.ax2.set_ylim([0, 9])
+            # self.ax2.set_ylim([0, 9])
         elif method_type == "exponential":
             self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -195,7 +195,7 @@ class PlotWidget(QtWidgets.QWidget):
 
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
-            self.ax2.set_ylim([0, 9])
+            # self.ax2.set_ylim([0, 9])
 
         elif method_type == "model_fit":
             self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
@@ -209,7 +209,7 @@ class PlotWidget(QtWidgets.QWidget):
                     )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
-            self.ax2.set_ylim([0, 9])
+            # self.ax2.set_ylim([0, 9])
         elif method_type == "acceleration":
             deriv1 = method_data.get("deriv1")
             deriv2 = method_data.get("deriv2")
