@@ -7,20 +7,13 @@ Produces a plot showing estimation error vs the varied parameter.
 """
 
 import argparse
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from data_generation.simulation import simulate_sample
 from latency_methods import LatencyMethods
-
-# Add parent directory to path so we can import from latency_methods
-# parent_dir = str(Path(__file__).parent.parent)
-# if parent_dir not in sys.path:
-#     sys.path.insert(0, parent_dir)
 
 
 def evaluate_method_on_sample(
@@ -242,27 +235,35 @@ def evaluate_across_parameters(
     """
     all_results = {}
 
-    for param_value in param_list:
-        if param_type == "fps":
-            fps = param_value
-            noise_sd = fixed_noise
-        else:  # param_type == "noise"
-            fps = fixed_fps
-            noise_sd = param_value
+    if param_type == "fps":
+        eval_values = fixed_noise
+    else:
+        eval_values = fixed_fps
 
-        results = evaluate_methods_at_params(
-            fps,
-            noise_sd,
-            n_samples,
-            method_names,
-            D_min,
-            D_max,
-            duration,
-            stim_time,
-            led_duration,
-            verbose,
-        )
-        all_results[param_value] = results
+    for eval_val in eval_values:
+        eval_results = {}
+        for param_value in param_list:
+            if param_type == "fps":
+                fps = param_value
+                noise_sd = eval_val
+            else:  # param_type == "noise"
+                fps = eval_val
+                noise_sd = param_value
+
+            results = evaluate_methods_at_params(
+                fps,
+                noise_sd,
+                n_samples,
+                method_names,
+                D_min,
+                D_max,
+                duration,
+                stim_time,
+                led_duration,
+                verbose,
+            )
+            eval_results[param_value] = results
+        all_results[eval_val] = eval_results
 
     return all_results
 
@@ -286,49 +287,58 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
     output_path : str or Path, optional
         Path to save the figure.
     """
-    param_list = sorted(all_results.keys())
 
-    fig, axes = plt.subplots(1, 2, figsize=(16, 5))
+    fig, axes = plt.subplots(
+        1, len(all_results.keys()), figsize=(8 * len(all_results.keys()), 5)
+    )
     axes = axes.flatten()
-
-    # Prepare data for each method
-    method_data = {
-        method: {"mae": [], "rmse": [], "median": []} for method in method_names
-    }
-
-    # Collect quantization errors
-    quant_mae_per_param = []
-    quant_median_per_param = []
-
-    for param_value in param_list:
-        for method in method_names:
-            errors = all_results[param_value].get(method, [])
-            stats = compute_error_stats(errors)
-            method_data[method]["mae"].append(stats["mae"])
-            method_data[method]["rmse"].append(stats["rmse"])
-            method_data[method]["median"].append(stats["median"])
-
-        # Compute quantization error stats
-        quant_errors = all_results[param_value].get("quantization_errors", [])
-        quant_stats = compute_error_stats(quant_errors)
-        quant_mae_per_param.append(quant_stats["mae"])
-        quant_median_per_param.append(quant_stats["median"])
 
     # Plot each metric
     colors = plt.cm.tab10(np.linspace(0, 1, len(method_names)))
 
-    # Set x-axis label based on parameter type
-    if param_type == "fps":
-        xlabel = "Sample Rate (fps)"
-        param_info = f"noise_sd={all_results[param_list[0]]['noise_sd']}"
-    else:
-        xlabel = "Noise SD"
-        param_info = f"fps={all_results[param_list[0]]['fps']}"
+    for idx, eval_value in enumerate(sorted(all_results.keys())):
+        # Set x-axis label based on parameter type
+        if param_type == "fps":
+            xlabel = "Sample Rate (fps)"
+            param_info = f"noise_sd="
+        else:
+            xlabel = "Noise SD"
+            param_info = f"fps="
 
-    for idx, metric_name in enumerate(["mae", "rmse"]):
+        # Collect quantization errors
+        quant_mae_per_param = []
+        quant_median_per_param = []
+
+        # Prepare data for each method
+        method_data = {
+            method: {"mae": [], "rmse": [], "median": []} for method in method_names
+        }
+
+        param_list = sorted(all_results[eval_value].keys())
+
+        for param_value in param_list:
+            for method in method_names:
+                errors = all_results[eval_value][param_value].get(method, [])
+                print(f"Errors ({method}, {param_value}):", errors)
+                stats = compute_error_stats(errors)
+                method_data[method]["mae"].append(stats["mae"])
+                method_data[method]["rmse"].append(stats["rmse"])
+                method_data[method]["median"].append(stats["median"])
+
+            # Compute quantization error stats
+            quant_errors = all_results[eval_value][param_value].get(
+                "quantization_errors", []
+            )
+            quant_stats = compute_error_stats(quant_errors)
+            quant_mae_per_param.append(quant_stats["mae"])
+            quant_median_per_param.append(quant_stats["median"])
+
+        param_info += f"{eval_value}"
         ax = axes[idx]
         for method_idx, method in enumerate(method_names):
-            values = method_data[method][metric_name]
+            values = method_data[method]["mae"]
+            print("Parameter List:", param_list)
+            print("Values:", values)
             ax.plot(
                 param_list,
                 values,
@@ -338,8 +348,6 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
                 linewidth=2,
             )
 
-        # Only plot quantization error for FPS variation
-        # if param_type == "fps":
         ax.plot(
             param_list,
             quant_median_per_param,
@@ -352,16 +360,15 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         )
 
         ax.set_xlabel(xlabel, fontsize=12)
-        ax.set_ylabel(f"{metric_name.upper()} Error (ms)", fontsize=12)
+        ax.set_ylabel(f"MAE Error (ms)", fontsize=12)
         ax.set_yscale("log", base=10)
-        ax.set_title(f"{metric_name.upper()} vs {xlabel}", fontsize=13)
+        ax.set_title(f"MAE over {xlabel} ({param_info})", fontsize=13)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=10)
 
     # Add overall title with parameters
     fig.suptitle(
-        f"Latency Estimation Error Across {xlabel}\n"
-        f"({param_info}, D_min={D_min}, D_max={D_max})",
+        f"Latency Estimation Error Across {xlabel}\n" f"(D_min={D_min}, D_max={D_max})",
         fontsize=14,
         y=0.995,
     )
@@ -405,6 +412,7 @@ def main():
     fps_group = parser.add_mutually_exclusive_group(required=True)
     fps_group.add_argument(
         "--fps",
+        nargs="+",
         type=float,
         help="Fixed FPS value (use with --noise-range)",
     )
@@ -420,6 +428,7 @@ def main():
     noise_group = parser.add_mutually_exclusive_group(required=True)
     noise_group.add_argument(
         "--noise",
+        nargs="+",
         type=float,
         help="Fixed noise SD value (use with --fps-range)",
     )
@@ -516,19 +525,24 @@ def main():
     print("\n" + "=" * 70)
     print("Summary of Results")
     print("=" * 70)
-    for param_value in sorted(all_results.keys()):
+    for eval_value in sorted(all_results.keys()):
         if param_type == "fps":
-            print(f"\nFPS: {param_value}, Noise SD: {fixed_noise}")
+            print(f"\nSummary for noise={eval_value}")
         else:
-            print(f"\nNoise SD: {param_value}, FPS: {fixed_fps}")
-        for method in args.methods:
-            errors = all_results[param_value].get(method, [])
-            stats = compute_error_stats(errors)
-            print(
-                f"  {method:40s}: MAE={stats['mae']:7.2f}ms, "
-                f"RMSE={stats['rmse']:7.2f}ms, Median={stats['median']:7.2f}ms "
-                f"({stats['count']} samples)"
-            )
+            print(f"\nSummary for fps={eval_value}")
+        for param_value in sorted(all_results[eval_value].keys()):
+            if param_type == "fps":
+                print(f"\nFPS: {param_value}, Noise SD: {eval_value}")
+            else:
+                print(f"\nNoise SD: {param_value}, FPS: {eval_value}")
+            for method in args.methods:
+                errors = all_results[eval_value][param_value].get(method, [])
+                stats = compute_error_stats(errors)
+                print(
+                    f"  {method:40s}: MAE={stats['mae']:7.2f}ms, "
+                    f"RMSE={stats['rmse']:7.2f}ms, Median={stats['median']:7.2f}ms "
+                    f"({stats['count']} samples)"
+                )
 
     # Generate plot
     output_file = args.output
