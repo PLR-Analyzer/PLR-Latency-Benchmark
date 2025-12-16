@@ -7,6 +7,7 @@ Produces a plot showing estimation error vs the varied parameter.
 """
 
 import argparse
+import multiprocessing
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -14,6 +15,49 @@ import numpy as np
 
 from data_generation.simulation import simulate_sample
 from latency_methods import LatencyMethods
+
+
+def _process_sample(
+    i, duration, fps, stim_time, led_duration, D_min, D_max, noise_sd, method_names
+):
+    # Generate sample
+    time, D_obs, D_clean, true_latency, params = simulate_sample(
+        duration=duration,
+        fps=fps,
+        stim_time=stim_time,
+        stim_duration=led_duration,
+        D_min=D_min,
+        D_max=D_max,
+        seed=i,
+        noise_sd=noise_sd,
+        drift_amp=0.2,
+    )
+
+    # Calculate actual quantization error: distance to nearest sample point
+    idx_nearest = np.argmin(np.abs(time - true_latency))
+    nearest_time = time[idx_nearest]
+    quant_error = abs(nearest_time - true_latency)
+
+    # Evaluate each method
+    errors = {}
+    for method_name in method_names:
+        latency_est = evaluate_method_on_sample(
+            time,
+            D_obs,
+            true_latency,
+            method_name,
+            stim_time,
+            led_duration,
+            fps,
+        )
+
+        if not np.isnan(latency_est):
+            error_ms = abs(latency_est - true_latency)
+            errors[method_name] = error_ms
+        else:
+            errors[method_name] = None
+
+    return true_latency, quant_error, errors
 
 
 def evaluate_method_on_sample(
@@ -107,46 +151,27 @@ def evaluate_methods_at_params(
     results["true_latencies"] = []
     results["quantization_errors"] = []
 
-    for i in range(n_samples):
-        if verbose and (i + 1) % max(1, n_samples // 10) == 0:
-            print(f"  Sample {i + 1}/{n_samples}...")
-
-        # Generate sample
-        time, D_obs, D_clean, true_latency, params = simulate_sample(
-            duration=duration,
-            fps=fps,
-            stim_time=stim_time,
-            stim_duration=led_duration,
-            D_min=D_min,
-            D_max=D_max,
-            seed=i,
-            noise_sd=noise_sd,
-            drift_amp=0.2,
+    args = (
+        duration,
+        fps,
+        stim_time,
+        led_duration,
+        D_min,
+        D_max,
+        noise_sd,
+        method_names,
+    )
+    with multiprocessing.Pool() as pool:
+        sample_results = pool.starmap(
+            _process_sample, [(i,) + args for i in range(n_samples)]
         )
 
-        results["true_latencies"].append(true_latency)
-
-        # Calculate actual quantization error: distance to nearest sample point
-        idx_nearest = np.argmin(np.abs(time - true_latency))
-        nearest_time = time[idx_nearest]
-        quant_error = abs(nearest_time - true_latency)
-        results["quantization_errors"].append(quant_error)
-
-        # Evaluate each method
+    for true_lat, quant_err, errs in sample_results:
+        results["true_latencies"].append(true_lat)
+        results["quantization_errors"].append(quant_err)
         for method_name in method_names:
-            latency_est = evaluate_method_on_sample(
-                time,
-                D_obs,
-                true_latency,
-                method_name,
-                stim_time,
-                led_duration,
-                fps,
-            )
-
-            if not np.isnan(latency_est):
-                error_ms = abs(latency_est - true_latency)
-                results[method_name].append(error_ms)
+            if errs[method_name] is not None:
+                results[method_name].append(errs[method_name])
 
     return results
 
