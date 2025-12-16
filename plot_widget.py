@@ -18,6 +18,8 @@ class PlotWidget(QtWidgets.QWidget):
 
         self.canvas = FigureCanvas(self.fig)
         self.toolbar = NavigationToolbar(self.canvas, self)
+        # Secondary axis for method-specific plots (created on demand)
+        self.ax2_secondary = None
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.toolbar)
@@ -69,8 +71,16 @@ class PlotWidget(QtWidgets.QWidget):
                 true_latency, color="magenta", linestyle="--", label="True"
             )
         self.ax1.legend()
+        # self.ax1.set_ylim([0, 9])
 
         # Second subplot: method-specific visualization
+        # Ensure any previous secondary axis is removed before clearing
+        if getattr(self, "ax2_secondary", None) is not None:
+            try:
+                self.ax2_secondary.remove()
+            except Exception:
+                pass
+            self.ax2_secondary = None
         self.ax2.clear()
         self._plot_method_specific(
             t,
@@ -113,6 +123,7 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+            # self.ax2.set_ylim([0, 9])
         elif method_type == "piecewise":
             self.ax2.plot(t, D_obs, label="Observed", color="C0")
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -135,6 +146,57 @@ class PlotWidget(QtWidgets.QWidget):
                 )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+            # self.ax2.set_ylim([0, 9])
+        elif method_type == "exponential":
+            self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
+            self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
+            self.ax2.autoscale(False)
+
+            fit_params = method_data.get("fit_params")
+            if fit_params is not None:
+                T = fit_params["T"]
+                a1 = fit_params["a1"]
+                a2 = fit_params["a2"]
+                b2 = fit_params["b2"]
+                a3 = fit_params["a3"]
+                b3 = fit_params["b3"]
+
+                # Unified Bos (1991) model
+                dt = t - T
+                absdt = np.abs(dt)
+
+                u = 0.5 * (dt - absdt)  # pre-onset (negative branch)
+                v = 0.5 * (dt + absdt)  # post-onset (nonnegative branch)
+
+                f_pred = (
+                    a1
+                    + 0.5 * (a3 * b3 - a2 * b2) * u
+                    + a2 * np.exp(-np.clip(b2 * v, -100, 100))
+                    - a3 * np.exp(-np.clip(b3 * v, -100, 100))
+                )
+
+                # Plot unified fitted curve
+                self.ax2.plot(
+                    t,
+                    f_pred,
+                    color="green",
+                    linewidth=2,
+                    label="Unified model fit",
+                )
+
+                # Mark latency T
+                self.ax2.axvline(
+                    T,
+                    color="orange",
+                    linestyle=":",
+                    linewidth=2,
+                    label=f"Latency T={T:.3f}s",
+                )
+
+            self.ax2.set_ylabel("Diameter (mm)")
+            self.ax2.legend()
+            # self.ax2.set_ylim([0, 9])
+
         elif method_type == "model_fit":
             self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -147,10 +209,54 @@ class PlotWidget(QtWidgets.QWidget):
                     )
             self.ax2.set_ylabel("Diameter (mm)")
             self.ax2.legend()
+            # self.ax2.set_ylim([0, 9])
+        elif method_type == "acceleration":
+            deriv1 = method_data.get("deriv1")
+            deriv2 = method_data.get("deriv2")
+            t_interp = method_data.get("t_interp", t)
+
+            # Plot first derivative on the left axis
+            if deriv1 is not None:
+                self.ax2.plot(
+                    t_interp,
+                    deriv1,
+                    label="1st derivative (dD/dt)",
+                    color="C2",
+                    linewidth=1.5,
+                )
+
+            # Create or reuse secondary y-axis for second derivative
+            if getattr(self, "ax2_secondary", None) is None:
+                ax2_secondary = self.ax2.twinx()
+                self.ax2_secondary = ax2_secondary
+            else:
+                ax2_secondary = self.ax2_secondary
+                ax2_secondary.cla()
+
+            if deriv2 is not None:
+                ax2_secondary.plot(
+                    t_interp,
+                    deriv2,
+                    label="2nd derivative (d²D/dt²)",
+                    color="C3",
+                    linewidth=1.5,
+                )
+
+            self.ax2.set_ylabel("dD/dt", color="C2")
+            ax2_secondary.set_ylabel("d²D/dt²", color="C3")
+            self.ax2.tick_params(axis="y", labelcolor="C2")
+            ax2_secondary.tick_params(axis="y", labelcolor="C3")
+
+            # Combine legends from both axes
+            lines1, labels1 = self.ax2.get_legend_handles_labels()
+            lines2, labels2 = ax2_secondary.get_legend_handles_labels()
+            self.ax2.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
 
         # Common elements for second subplot
         self.ax2.set_xlabel("Time (s)")
         self.ax2.axvspan(stim_time, stim_time + led_duration, color="yellow", alpha=0.2)
+
+        # Predicted and true latency lines (shown on the method plot)
         if np.isfinite(predicted_latency):
             self.ax2.axvline(
                 predicted_latency, color="red", linestyle="-", label="Predicted"

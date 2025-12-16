@@ -1,14 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import stat_values
-from pamplona_model import (
+
+from data_generation import stat_values
+from data_generation.pamplona_model import (
     blondels_to_footlamberts,
     calc_latency,
     phi_from_diameter,
     phi_to_blondels,
     simulate_dynamics_euler,
 )
-from variability_curves import apply_isocurve
+from data_generation.variability_curves import apply_isocurve
+
+# S is a constant that affects the constriction/dilation velocity and
+# varies among individuals
+S = 600
 
 
 def find_required_phi(
@@ -88,23 +93,78 @@ def _compute_constriction_metrics(time, D, stim_time, tau_latency):
     return avg_constr_vel, max_constr_vel
 
 
-if __name__ == "__main__":
-    stim_time = 500
+def simulate_sample(
+    duration=stat_values.DURATION,
+    fps=stat_values.FPS,
+    stim_time=stat_values.LIGHT_STIMULUS_START,
+    stim_duration=stat_values.LIGHT_STIMULUS_DURATION,
+    D_min=stat_values.MINIMUM_DIAMETER_MEAN,
+    D_max=stat_values.MAX_DIAMETER_MEAN,
+    seed=42,
+    noise_sd=0.03,
+    drift_amp=0.05,
+):
+    np.random.seed(seed)  # use seed for repruducabilireproducibilityty
 
-    n = int(round(stat_values.DURATION * stat_values.FPS)) + 1
-    n = stat_values.DURATION  # increase resolution for better accuracy
+    n = int(fps * duration // 1000)
+    time = np.linspace(0.0, duration, n)
+
+    phi_arr = phi = np.full(n, phi_from_diameter(D_max))
+    on_mask = (time >= stim_time) & (time < stim_time + stim_duration)
+
+    phi_stim = find_required_phi(
+        D_max,
+        D_min,
+        phi_from_diameter(D_max),
+        phi_from_diameter(D_min),
+        time,
+        on_mask,
+        S,
+        tol=1e-3,
+        max_factor=1e6,
+    )
+    phi_arr[on_mask] = phi_stim
+    tau_latency = calc_latency(0.4, blondels_to_footlamberts(phi_to_blondels(phi_stim)))
+
+    D = simulate_dynamics_euler(phi_arr, time, D_max, S)
+
+    r_l = np.random.uniform(0.0, 1.0)
+    D = apply_isocurve(D, r_l)
+
+    # add slow drift + measurement noise
+    hippus_freq = np.random.uniform(0.05, 0.3)  # Hz
+    drift = drift_amp * np.sin(
+        2 * np.pi * hippus_freq * (time / 1000.0) + np.random.uniform(0, 2 * np.pi)
+    )
+    noise = np.random.normal(0, noise_sd, size=n)
+
+    D_clean = D.copy()
+    D_obs = D_clean + drift + noise
+
+    params = dict(
+        D_max=D_max,
+        D_min=D_min,
+        phi_baseline=phi[0],
+        phi_stim=phi_stim,
+        tau_latency=tau_latency,
+        noise_sd=noise_sd,
+        drift_amp=drift_amp,
+        hippus_freq=hippus_freq,
+    )
+
+    return time, D_obs, D_clean, stim_time + tau_latency, params
+
+
+if __name__ == "__main__":
+    n = int(stat_values.FPS * stat_values.DURATION // 1000)
     time = np.linspace(0.0, stat_values.DURATION, n)
 
     D_max = stat_values.MAX_DIAMETER_MEAN
     D_min = stat_values.MINIMUM_DIAMETER_MEAN
 
-    # S is a constant that affects the constriction/dilation velocity and
-    # varies among individuals
-    S = 600
-
     phi_arr = phi = np.full(n, phi_from_diameter(D_max))
-    on_mask = (time >= stim_time) & (
-        time < stim_time + stat_values.LIGHT_STIMULUS_DURATION
+    on_mask = (time >= stat_values.LIGHT_STIMULUS_START) & (
+        time < stat_values.LIGHT_STIMULUS_START + stat_values.LIGHT_STIMULUS_DURATION
     )
 
     phi_stim = find_required_phi(
@@ -129,7 +189,9 @@ if __name__ == "__main__":
     D = apply_isocurve(D, r_l)
 
     # compute constriction metrics to validate fit
-    avg_v, max_v = _compute_constriction_metrics(time, D, stim_time, latency)
+    avg_v, max_v = _compute_constriction_metrics(
+        time, D, stat_values.LIGHT_STIMULUS_START, latency
+    )
     print(
         f"Baseline phi: {phi_from_diameter(D_max) * 1e6:.3e}\tStimulus phi: {phi_stim * 1e6:.3e} lux"
     )
@@ -154,18 +216,23 @@ if __name__ == "__main__":
     # plot
     plt.figure()
     plt.plot(time, D, label="Simulated Diameter")
-    # plt.scatter(time, D)
+    plt.scatter(time, D)
     plt.xlabel("Time (s)")
     plt.ylabel("Diameter (mm)")
     plt.title("PLR Simulation Test")
     plt.axvspan(
-        stim_time,
-        stim_time + stat_values.LIGHT_STIMULUS_DURATION,
+        stat_values.LIGHT_STIMULUS_START,
+        stat_values.LIGHT_STIMULUS_START + stat_values.LIGHT_STIMULUS_DURATION,
         color="yellow",
         alpha=0.5,
         label="Stimulus",
     )
-    plt.axvline(stim_time + latency, color="red", linestyle="--", label="Latency")
+    plt.axvline(
+        stat_values.LIGHT_STIMULUS_START + latency,
+        color="red",
+        linestyle="--",
+        label="Latency",
+    )
     plt.legend()
     plt.grid()
     plt.show()

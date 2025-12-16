@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy as np
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from latency_methods import LatencyMethods
@@ -137,7 +136,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
             "min_diameter": "Min diameter (mm)",
             "amplitude": "Amplitude (%)",
             "constr_latency": "Constriction Latency (ms)",
-            "t75": "75% Recovery (s)",
+            "t75": "75% Recovery (ms)",
             "avg_constr_vel": "Avg Constr Vel (mm/s)",
             "max_constr_vel": "Max Constr Vel (mm/s)",
             "dil_vel": "Dilation Vel (mm/s)",
@@ -146,17 +145,10 @@ class LatencyVisualizer(QtWidgets.QWidget):
         for key, label in self.metric_labels.items():
             mean_val, std_val, count = summary.get(key, (np.nan, np.nan, 0))
             if count > 0 and np.isfinite(mean_val):
-                # display constriction latency in milliseconds
-                if key == "constr_latency":
-                    mean_ms = mean_val * 1000.0
-                    std_ms = std_val * 1000.0
-                    label.setText(
-                        f"{label_texts.get(key, key)}: {mean_ms:.1f} ({std_ms:.1f})"
-                    )
-                else:
-                    label.setText(
-                        f"{label_texts.get(key, key)}: {mean_val:.4f} ({std_val:.4f})"
-                    )
+                # Values from metrics.py are already in correct units (ms for time)
+                label.setText(
+                    f"{label_texts.get(key, key)}: {mean_val:.1f} ± {std_val:.1f}"
+                )
             else:
                 label.setText(f"{label_texts.get(key, key)}: N/A")
 
@@ -193,8 +185,8 @@ class LatencyVisualizer(QtWidgets.QWidget):
             D_clean = npz["diameter_clean"]
             true_latency = float(npz.get("true_latency", np.nan))
             fps = float(npz.get("fps", 30.0))
-            stim_time = float(npz.get("stim_time", 0.5))
-            led_duration = float(npz.get("led_duration", 0.167))
+            stim_time = float(npz.get("stim_time", 500.0))  # in ms
+            led_duration = float(npz.get("led_duration", 167.0))  # in ms
         except Exception as e:
             QMessageBox.critical(self, "Error", f"NPZ missing expected keys: {e}")
             return
@@ -247,8 +239,8 @@ class LatencyVisualizer(QtWidgets.QWidget):
             D_obs = np.asarray(npz["diameter_observed"])
             true_latency = float(npz.get("true_latency", np.nan))
             fps = float(npz.get("fps", 30.0))
-            led_duration = float(npz.get("led_duration", 1.0))
-            stim_time = float(npz.get("stim_time", 0.5))
+            led_duration = float(npz.get("led_duration", 167.0))  # in ms
+            stim_time = float(npz.get("stim_time", 500.0))  # in ms
         except Exception as e:
             return {
                 "filename": filepath.name,
@@ -256,8 +248,8 @@ class LatencyVisualizer(QtWidgets.QWidget):
             }
 
         n = len(D_obs)
-        dt = 1.0 / fps
-        t = np.linspace(0, dt * (n - 1), n)
+        dt = 1000.0 / fps  # dt in ms
+        t = np.linspace(0, dt * (n - 1), n)  # t in ms
 
         predicted_latency, _ = LatencyMethods.compute_by_name(
             method_name, t, D_obs, stim_time, led_duration, fps
@@ -346,14 +338,13 @@ class LatencyVisualizer(QtWidgets.QWidget):
         D_obs = self.data["D_obs"]
         D_clean = self.data["D_clean"]
         fps = self.data["fps"]
-        stim_time = self.data["stim_time"]
-        led_duration = self.data["led_duration"]
-        true_latency = self.data["true_latency"]
+        stim_time = self.data["stim_time"]  # in ms
+        led_duration = self.data["led_duration"]  # in ms
+        true_latency = self.data["true_latency"]  # in ms
 
         n = len(D_obs)
-        dt = 1.0 / fps
-        t = np.linspace(0, dt * (n - 1), n)
-
+        dt = 1000.0 / fps  # dt in ms
+        t = np.linspace(0, dt * (n - 1), n)  # t in ms
         # Compute latency according to selected method
         method = self.method_combo.currentText()
         predicted_latency, method_data = LatencyMethods.compute_by_name(
@@ -376,12 +367,12 @@ class LatencyVisualizer(QtWidgets.QWidget):
         err_text = "N/A"
         if np.isfinite(predicted_latency) and np.isfinite(true_latency):
             err = predicted_latency - true_latency
-            err_text = f"Error = {err:.3f} s (predicted - true)"
+            err_text = f"Error = {err:.1f} ms (predicted - true)"
 
         quant_err = self._compute_quantization_error(t, true_latency)
         quant_text = ""
         if np.isfinite(quant_err):
-            quant_text = f"  |  Min quantization error = {quant_err:.3f} s"
+            quant_text = f"  |  Min quantization error = {quant_err:.1f} ms"
 
         self.info_label.setText(
             f"File: {self.data['filename']}    FPS: {fps}    {err_text}{quant_text}"

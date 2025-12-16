@@ -1,7 +1,10 @@
 """Latency estimation methods for PLR analysis."""
 
 import numpy as np
+from scipy.interpolate import interp1d
+from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import least_squares, minimize
+from scipy.signal import savgol_filter
 
 
 class LatencyMethods:
@@ -100,8 +103,6 @@ class LatencyMethods:
         baseline_mean = np.mean(signal[before_mask])
         baseline_std = np.std(signal[before_mask])
 
-        print(baseline_mean, baseline_std)
-
         threshold_val = baseline_mean - 3 * baseline_std
         crossing_idx = np.where(signal[after_mask] < threshold_val)[0]
         if len(crossing_idx) == 0:
@@ -170,6 +171,74 @@ class LatencyMethods:
         }
 
         return refined, {"type": "piecewise", "fit_lines": fit_lines}
+
+    @staticmethod
+    def exponential_fit(t, signal, stim_time):
+        """
+        Bos (1991) ssecond-order mathematical model of the pupil constriction.
+        """
+
+        t = np.asarray(t, float)
+        y = np.asarray(signal, float)
+
+        # ---- Fitting window: everything before the constriction minimum ----
+        end = np.argmin(y)
+        mask = np.arange(len(t)) <= end
+        tt = t[mask]
+        yy = y[mask]
+
+        if len(tt) < 10:
+            return np.nan, {"type": "exponential", "fit_params": {}}
+
+        # ---- Simple initial guesses ----
+        T0 = stim_time  # Literature suggests a latency of ~200ms
+        a1_0 = yy[np.searchsorted(tt, stim_time)]  # value at stim time
+        a2_0 = a1_0 - yy[-1]
+        a3_0 = 0.3 * a2_0
+        b2_0 = 0.01
+        b3_0 = 0.002
+
+        p0 = np.array([T0, a1_0, a2_0, b2_0, a3_0, b3_0], float)
+
+        # ---- Bounds ----
+        lb = [stim_time, a1_0 - 5, -5 * a2_0, 0.0001, -5 * a3_0, 0.0001]
+        ub = [tt[-1] - 1.0, a1_0 + 5, 5 * a2_0, 0.1, 5 * a3_0, 0.02]
+
+        # ---- Bos model with constraints from section 4.2----
+        def model(p, ti):
+            T, a1, a2, b2, a3, b3 = p
+
+            a0 = a1 + a2 - a3
+            b0 = -a2 * b2 + a3 * b3
+
+            dt = ti - T
+            before = a0 + b0 * dt
+            after = a1 + a2 * np.exp(-b2 * dt) - a3 * np.exp(-b3 * dt)
+            return np.where(ti < T, before, after)
+
+        def residuals(p):
+            return model(p, tt) - yy
+
+        res = least_squares(residuals, p0, bounds=(lb, ub), max_nfev=4000)
+        T, a1, a2, b2, a3, b3 = res.x
+
+        # ---- Derived parameters ----
+        a0 = a1 + a2 - a3
+        b0 = -a2 * b2 + a3 * b3
+
+        return float(T), {
+            "type": "exponential",
+            "fit_params": {
+                "T": float(T),
+                "a0": float(a0),
+                "b0": float(b0),
+                "a1": float(a1),
+                "a2": float(a2),
+                "b2": float(b2),
+                "a3": float(a3),
+                "b3": float(b3),
+            },
+        }
 
     @staticmethod
     def _flux_from_diameter(D, phi_ref=1.0):
@@ -332,6 +401,70 @@ class LatencyMethods:
         return latency, {"type": "model_fit", "fit_data": fit_data}
 
     @staticmethod
+    def max_negative_acceleration(t, signal, stim_time):
+        """Compute latency as the time of maximum negative acceleration after stimulus.
+
+        Uses Savitzky-Golay filtering, cubic spline interpolation, and Gaussian
+        filtering to smooth data and estimate latency from the second derivative.
+
+        Parameters
+        ----------
+        t : array
+            Time points (seconds).
+        signal : array
+            Signal values (e.g., pupil diameter in mm).
+        stim_time : float
+            Time when stimulus starts (seconds).
+
+        Returns
+        -------
+        float
+            Estimated latency time (seconds).
+        dict
+            Visualization data with type "acceleration" containing first and second derivatives.
+        """
+        t = np.asarray(t, float)
+        signal = np.asarray(signal, float)
+
+        # Step 1: Apply Savitzky-Golay filter (5-point, 2nd order polynomial)
+        signal_smoothed = savgol_filter(signal, window_length=5, polyorder=2)
+
+        # Step 2: Cubic spline interpolation for higher resolution (600 Hz)
+        f_cubic = interp1d(t, signal_smoothed, kind="cubic", fill_value="extrapolate")
+        t_interp = np.linspace(t[0], t[-1], int((t[-1] // 1000) * 600))
+        signal_interp = f_cubic(t_interp)
+        dt_interp = t_interp[1] - t_interp[0]
+
+        # Step 3: Calculate first derivative
+        deriv1 = np.gradient(signal_interp, dt_interp)
+
+        # Step 4: Apply Gaussian filter to first derivative (sigma=25)
+        deriv1_filtered = gaussian_filter1d(deriv1, sigma=25)
+
+        # Step 5: Calculate second derivative from filtered first derivative
+        deriv2 = np.gradient(deriv1_filtered, dt_interp)
+
+        # Step 6: Find maximum negative acceleration after stimulus
+        mask = t_interp >= stim_time
+        if not np.any(mask):
+            return np.nan, {
+                "type": "acceleration",
+                "deriv1": deriv1_filtered,
+                "deriv2": deriv2,
+            }
+
+        # Find the most negative (minimum) second derivative
+        idx_rel = np.argmin(deriv2[mask])
+        idx = np.where(mask)[0][0] + idx_rel
+
+        return t_interp[idx], {
+            "type": "acceleration",
+            "deriv1": deriv1_filtered,
+            "deriv2": deriv2,
+            "t_interp": t_interp,
+        }
+
+    @staticmethod
     def get_available_methods():
         """Return list of available method names.
 
@@ -345,7 +478,9 @@ class LatencyMethods:
             "Min derivative (smoothed)",
             "Threshold crossing",
             "Piecewise-linear fit",
+            "Exponential fit",
             "Fit to simulation model",
+            "Bergamin & Kardon",
         ]
 
     @staticmethod
@@ -382,11 +517,15 @@ class LatencyMethods:
             return LatencyMethods.threshold_crossing(t, signal, stim_time)
         elif method_name == "Piecewise-linear fit":
             return LatencyMethods.piecewise_linear(t, signal, stim_time)
+        elif method_name == "Exponential fit":
+            return LatencyMethods.exponential_fit(t, signal, stim_time)
         elif method_name == "Fit to simulation model":
             if led_duration is None or fps is None:
                 dt = t[1] - t[0]
                 return np.nan, {"type": "derivative", "data": np.gradient(signal, dt)}
             return LatencyMethods.model_fit(t, signal, stim_time, led_duration, fps)
+        elif method_name == "Bergamin & Kardon":
+            return LatencyMethods.max_negative_acceleration(t, signal, stim_time)
         else:
             dt = t[1] - t[0]
             return np.nan, {

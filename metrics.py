@@ -20,8 +20,8 @@ def compute_metrics_from_file(filepath):
         npz = np.load(str(filepath), allow_pickle=True)
         D_obs = np.asarray(npz["diameter_observed"])
         fps = float(npz.get("fps", 30.0))
-        stim_time = float(npz.get("stim_time", 0.5))
-        led_duration = float(npz.get("led_duration", 0.167))
+        stim_time = float(npz.get("stim_time", 500.0))  # in ms
+        led_duration = float(npz.get("led_duration", 167.0))  # in ms
         true_latency_abs = npz.get("true_latency", None)
         if true_latency_abs is None:
             true_latency = np.nan
@@ -30,11 +30,14 @@ def compute_metrics_from_file(filepath):
     except Exception:
         return None
 
-    dt = 1.0 / fps
+    dt = 1000.0 / fps  # dt in ms (since fps is samples per second)
     n = len(D_obs)
-    t = np.linspace(0, dt * (n - 1), n)
+    t = np.linspace(0, dt * (n - 1), n)  # t in ms
 
-    deriv = np.gradient(D_obs, dt)
+    # Compute gradient in mm/ms, then convert to mm/s
+    deriv = (
+        np.gradient(D_obs, dt) * 1000.0
+    )  # gradient gives mm/ms, multiply by 1000 to get mm/s
 
     # Baseline (before stimulus)
     baseline_mask = t < stim_time
@@ -45,7 +48,7 @@ def compute_metrics_from_file(filepath):
     D_max = D_baseline_mean
 
     # Response region (after stimulus + small offset)
-    response_start_idx = int((stim_time + 0.2) * fps)
+    response_start_idx = int((stim_time + 200.0) * fps / 1000.0)  # +200 ms offset
     response_start_idx = min(response_start_idx, len(D_obs) - 1)
     response_region = D_obs[response_start_idx:]
     D_min = np.min(response_region) if len(response_region) > 0 else np.nan
@@ -63,7 +66,9 @@ def compute_metrics_from_file(filepath):
         t75 = np.nan
 
     # Constriction velocities (during response window)
-    constr_mask = (t >= stim_time) & (t <= stim_time + led_duration + 1.0)
+    constr_mask = (t >= stim_time) & (
+        t <= stim_time + led_duration + 1000.0
+    )  # +1000 ms window
     constr_deriv = deriv[constr_mask]
     constr_neg = constr_deriv[constr_deriv < 0]
     avg_constr_vel = np.mean(constr_neg) if len(constr_neg) > 0 else np.nan
@@ -72,7 +77,9 @@ def compute_metrics_from_file(filepath):
     # Dilation velocity (after minimum)
     if np.isfinite(D_min) and response_start_idx + 1 < len(D_obs):
         min_idx = response_start_idx + int(np.argmin(response_region))
-        dil_window_end = min(min_idx + int(0.5 * fps), len(deriv))
+        dil_window_end = min(
+            min_idx + int(0.5 * fps), len(deriv)
+        )  # 0.5 s = 500 ms window
         dil_deriv = deriv[min_idx:dil_window_end]
         dil_deriv_pos = dil_deriv[dil_deriv > 0]
         dil_vel = np.mean(dil_deriv_pos) if len(dil_deriv_pos) > 0 else np.nan

@@ -1,14 +1,15 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from pamplona_model import (
+from scipy.integrate import solve_ivp
+from scipy.interpolate import interp1d
+
+from data_generation.pamplona_model import (
     blondels_to_footlamberts,
     calc_latency,
     diameter_from_phi,
     phi_from_diameter,
     plr_rhs_with_latency,
 )
-from scipy.integrate import solve_ivp
-from scipy.interpolate import interp1d
 
 
 def blondels_to_lumens(blondels):
