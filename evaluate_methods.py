@@ -14,13 +14,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Add parent directory to path so we can import from latency_methods
-parent_dir = str(Path(__file__).parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
 from data_generation.simulation import simulate_sample
 from latency_methods import LatencyMethods
+
+# Add parent directory to path so we can import from latency_methods
+# parent_dir = str(Path(__file__).parent.parent)
+# if parent_dir not in sys.path:
+#     sys.path.insert(0, parent_dir)
 
 
 def evaluate_method_on_sample(
@@ -379,12 +379,12 @@ def main():
         description="Evaluate latency detection methods across sample rates or noise levels.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Vary FPS from 25 to 200 with step 25, fixed noise 0.03
-  python script.py --fps-range 25 200 25 --noise 0.03
+            Examples:
+            # Vary FPS from 25 to 200 with step 25, fixed noise 0.03
+            python script.py --fps-range 25 200 25 --noise 0.03
 
-  # Vary noise from 0.01 to 0.1 with step 0.01, fixed FPS 90
-  python script.py --noise-range 0.01 0.1 0.01 --fps 90
+            # Vary noise from 0.01 to 0.1 with step 0.01, fixed FPS 90
+            python script.py --noise-range 0.01 0.1 0.01 --fps 90
         """,
     )
     parser.add_argument(
