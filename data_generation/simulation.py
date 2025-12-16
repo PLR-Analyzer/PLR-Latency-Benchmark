@@ -216,7 +216,7 @@ if __name__ == "__main__":
     # plot
     plt.figure()
     plt.plot(time, D, label="Simulated Diameter")
-    # plt.scatter(time, D)
+    plt.scatter(time, D)
     plt.xlabel("Time (s)")
     plt.ylabel("Diameter (mm)")
     plt.title("PLR Simulation Test")

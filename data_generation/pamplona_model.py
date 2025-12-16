@@ -95,7 +95,7 @@ def simulate_dynamics_euler(phi_arr, time, D0, S):
     pending_latency = None
 
     for i in range(1, n):
-        t = float(time[i - 1])
+        t = float(time[i])
         new_phi = float(phi_arr[i])
 
         # detect stimulus change at this sample
