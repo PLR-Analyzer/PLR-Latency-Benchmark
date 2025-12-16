@@ -392,9 +392,11 @@ def main():
         "--methods",
         nargs="+",
         default=[
+            "Threshold crossing",
             "Min derivative",
-            "Min derivative (smoothed)",
-            "Velocity 2nd-order deviation",
+            "Piecewise-linear fit",
+            "Exponential fit",
+            "Bergamin & Kardon",
         ],
         help="Latency methods to evaluate",
     )
