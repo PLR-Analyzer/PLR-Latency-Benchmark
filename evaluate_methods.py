@@ -324,7 +324,7 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
     for idx, eval_value in enumerate(sorted(all_results.keys())):
         # Set x-axis label based on parameter type
         if param_type == "fps":
-            xlabel = "Sample Rate (fps)"
+            xlabel = "Sample Rate (Hz)"
             param_info = f"noise_sd="
         else:
             xlabel = "Noise SD"
