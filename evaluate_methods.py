@@ -372,9 +372,9 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
 
         ax.plot(
             param_list,
-            quant_median_per_param,
+            quant_mae_per_param,
             marker="^",
-            label="Median Quantization Error",
+            label="Mean Quantization Error",
             color="darkred",
             linewidth=2.5,
             markersize=8,
