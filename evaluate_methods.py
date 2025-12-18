@@ -143,7 +143,9 @@ def evaluate_methods_at_params(
         plus "fps", "noise_sd", "true_latencies", and "quantization_errors".
     """
     if verbose:
-        print(f"\nGenerating {n_samples} samples at {fps} fps, noise_sd={noise_sd}...")
+        print(
+            f"\nGenerating {n_samples} samples at {fps} fps, noise_sd={noise_sd}, diameters={D_min, D_max}..."
+        )
 
     results = {method_name: [] for method_name in method_names}
     results["fps"] = fps
@@ -265,30 +267,42 @@ def evaluate_across_parameters(
     else:
         eval_values = fixed_fps
 
-    for eval_val in eval_values:
-        eval_results = {}
-        for param_value in param_list:
-            if param_type == "fps":
-                fps = param_value
-                noise_sd = eval_val
-            else:  # param_type == "noise"
-                fps = eval_val
-                noise_sd = param_value
+    for diameters in zip(D_min, D_max):
+        # Iterate over the diameter combinations (D_Min, D_Max).
+        # Different diameter combinations will be stacked on top of each other
+        # in the resulting plot
+        diameter_results = {}
+        for eval_val in eval_values:
+            # Iterate over the fixed noise or fps values.
+            # Different fixed values will be stacked next to each other in the
+            # resulting plot
+            eval_results = {}
+            for param_value in param_list:
+                # This iterates over the parameter, that should be plotted on
+                # the x-axis (fps or noise). This is given as an argument with
+                # (MIN, MAX, STEP).
+                if param_type == "fps":
+                    fps = param_value
+                    noise_sd = eval_val
+                else:  # param_type == "noise"
+                    fps = eval_val
+                    noise_sd = param_value
 
-            results = evaluate_methods_at_params(
-                fps,
-                noise_sd,
-                n_samples,
-                method_names,
-                D_min,
-                D_max,
-                duration,
-                stim_time,
-                led_duration,
-                verbose,
-            )
-            eval_results[param_value] = results
-        all_results[eval_val] = eval_results
+                results = evaluate_methods_at_params(
+                    fps,
+                    noise_sd,
+                    n_samples,
+                    method_names,
+                    diameters[0],  # D_MIN
+                    diameters[1],  # D_MAX
+                    duration,
+                    stim_time,
+                    led_duration,
+                    verbose,
+                )
+                eval_results[param_value] = results
+            diameter_results[eval_val] = eval_results
+        all_results[diameters] = diameter_results
 
     return all_results
 
@@ -313,88 +327,116 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         Path to save the figure.
     """
 
-    fig, axes = plt.subplots(
-        1, len(all_results.keys()), figsize=(8 * len(all_results.keys()), 5)
+    # The dictonary containing all results (all_results) has the following structure:
+    #   {
+    #       diameter-tuple: {
+    #           fixed-value_n: {
+    #               x-axis-value_n:
+    #                   latency-method_n: {
+    #                       mse-values
+    #                   }
+    #               }
+    #           }
+    #           ...
+    #       }
+    # }
+    n_cols = len(next(iter(all_results.values())))
+    n_rows = len(all_results.keys())
+    fig = plt.figure(
+        constrained_layout=True,
+        figsize=(8 * n_cols, 5 * n_rows),
     )
-    axes = axes.flatten()
+
+    # Set x-axis label based on parameter type
+    if param_type == "fps":
+        xlabel = "Sample Rate (Hz)"
+        param_info = f"noise_sd="
+    else:
+        xlabel = "Noise SD"
+        param_info = f"fps="
+    fig.suptitle(
+        f"Latency Estimation Error Across {xlabel}\n",
+        fontsize=14,
+        weight="bold",
+    )
+
+    # create nx1 subfigs for rows
+    subfigs = fig.subfigures(nrows=n_rows, ncols=1)
 
     # Plot each metric
     colors = plt.cm.tab10(np.linspace(0, 1, len(method_names)))
 
-    for idx, eval_value in enumerate(sorted(all_results.keys())):
-        # Set x-axis label based on parameter type
-        if param_type == "fps":
-            xlabel = "Sample Rate (Hz)"
-            param_info = f"noise_sd="
-        else:
-            xlabel = "Noise SD"
-            param_info = f"fps="
-
-        # Collect quantization errors
-        quant_mae_per_param = []
-        quant_median_per_param = []
-
-        # Prepare data for each method
-        method_data = {
-            method: {"mae": [], "rmse": [], "median": []} for method in method_names
-        }
-
-        param_list = sorted(all_results[eval_value].keys())
-
-        for param_value in param_list:
-            for method in method_names:
-                errors = all_results[eval_value][param_value].get(method, [])
-                stats = compute_error_stats(errors)
-                method_data[method]["mae"].append(stats["mae"])
-                method_data[method]["rmse"].append(stats["rmse"])
-                method_data[method]["median"].append(stats["median"])
-
-            # Compute quantization error stats
-            quant_errors = all_results[eval_value][param_value].get(
-                "quantization_errors", []
-            )
-            quant_stats = compute_error_stats(quant_errors)
-            quant_mae_per_param.append(quant_stats["mae"])
-            quant_median_per_param.append(quant_stats["median"])
-
-        param_info += f"{eval_value}"
-        ax = axes[idx]
-        for method_idx, method in enumerate(method_names):
-            values = method_data[method]["mae"]
-            ax.plot(
-                param_list,
-                values,
-                marker="o",
-                label=method,
-                color=colors[method_idx],
-                linewidth=2,
-            )
-
-        ax.plot(
-            param_list,
-            quant_mae_per_param,
-            marker="^",
-            label="Mean Quantization Error",
-            color="darkred",
-            linewidth=2.5,
-            markersize=8,
-            linestyle="--",
+    for idx_vert, (diameter_tuple, subfig) in enumerate(
+        zip(all_results.keys(), subfigs)
+    ):
+        subfig.suptitle(
+            f"(D_min={diameter_tuple[0]}, D_max={diameter_tuple[1]})",
+            fontsize=14,
         )
 
-        ax.set_xlabel(xlabel, fontsize=12)
-        ax.set_ylabel(f"MAE Error (ms)", fontsize=12)
-        ax.set_yscale("log", base=10)
-        ax.set_title(f"MAE over {xlabel} ({param_info})", fontsize=13)
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=10)
+        axs = subfig.subplots(nrows=1, ncols=n_cols)
+        for idx_hori, (eval_value, ax) in enumerate(
+            zip(sorted(all_results[diameter_tuple].keys()), axs)
+        ):
+            # Collect quantization errors
+            quant_mae_per_param = []
+            quant_median_per_param = []
 
-    # Add overall title with parameters
-    fig.suptitle(
-        f"Latency Estimation Error Across {xlabel}\n" f"(D_min={D_min}, D_max={D_max})",
-        fontsize=14,
-        y=0.995,
-    )
-    plt.tight_layout()
+            # Prepare data for each method
+            method_data = {
+                method: {"mae": [], "rmse": [], "median": []} for method in method_names
+            }
+
+            param_list = sorted(all_results[diameter_tuple][eval_value].keys())
+
+            for param_value in param_list:
+                for method in method_names:
+                    errors = all_results[diameter_tuple][eval_value][param_value].get(
+                        method, []
+                    )
+                    stats = compute_error_stats(errors)
+                    method_data[method]["mae"].append(stats["mae"])
+                    method_data[method]["rmse"].append(stats["rmse"])
+                    method_data[method]["median"].append(stats["median"])
+
+                # Compute quantization error stats
+                quant_errors = all_results[diameter_tuple][eval_value][param_value].get(
+                    "quantization_errors", []
+                )
+                quant_stats = compute_error_stats(quant_errors)
+                quant_mae_per_param.append(quant_stats["mae"])
+                quant_median_per_param.append(quant_stats["median"])
+
+            for method_idx, method in enumerate(method_names):
+                values = method_data[method]["mae"]
+                ax.plot(
+                    param_list,
+                    values,
+                    marker="o",
+                    label=method,
+                    color=colors[method_idx],
+                    linewidth=2,
+                )
+
+            ax.plot(
+                param_list,
+                quant_mae_per_param,
+                marker="^",
+                label="Mean Quantization Error",
+                color="darkred",
+                linewidth=2.5,
+                markersize=8,
+                linestyle="--",
+            )
+
+            ax.set_xlabel(xlabel, fontsize=12)
+            ax.set_ylabel(f"MAE Error (ms)", fontsize=12)
+            ax.set_yscale("log", base=10)
+            ax.set_title(
+                f"MAE over {xlabel} ({param_info+str(eval_value)})", fontsize=13
+            )
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize=10)
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -471,15 +513,17 @@ def main():
     )
     parser.add_argument(
         "--D-min",
+        nargs="+",
         type=float,
-        default=4.0,
-        help="Minimum pupil diameter during stimulus (default: 4.0)",
+        default=[3.0, 4.0],
+        help="Minimum pupil diameter during stimulus (default: [3.0, 4.0])",
     )
     parser.add_argument(
         "--D-max",
+        nargs="+",
         type=float,
-        default=5.0,
-        help="Maximum pupil diameter at baseline (default: 5.0)",
+        default=[7.0, 5.0],
+        help="Maximum pupil diameter at baseline (default: [7.0, 5.0])",
     )
     parser.add_argument(
         "-o",
@@ -542,29 +586,6 @@ def main():
         args.D_max,
         verbose=args.verbose or True,
     )
-
-    # Print summary
-    print("\n" + "=" * 70)
-    print("Summary of Results")
-    print("=" * 70)
-    for eval_value in sorted(all_results.keys()):
-        if param_type == "fps":
-            print(f"\nSummary for noise={eval_value}")
-        else:
-            print(f"\nSummary for fps={eval_value}")
-        for param_value in sorted(all_results[eval_value].keys()):
-            if param_type == "fps":
-                print(f"\nFPS: {param_value}, Noise SD: {eval_value}")
-            else:
-                print(f"\nNoise SD: {param_value}, FPS: {eval_value}")
-            for method in args.methods:
-                errors = all_results[eval_value][param_value].get(method, [])
-                stats = compute_error_stats(errors)
-                print(
-                    f"  {method:40s}: MAE={stats['mae']:7.2f}ms, "
-                    f"RMSE={stats['rmse']:7.2f}ms, Median={stats['median']:7.2f}ms "
-                    f"({stats['count']} samples)"
-                )
 
     # Generate plot
     output_file = args.output
