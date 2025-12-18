@@ -12,6 +12,8 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pickle
+from pathlib import Path
 
 from data_generation.simulation import simulate_sample
 from latency_methods import LatencyMethods
@@ -209,6 +211,24 @@ def compute_error_stats(errors):
         "std": float(np.std(errors)),
         "count": len(errors),
     }
+
+
+def save_results(path, all_results, metadata=None):
+    """Save evaluation results and metadata to a pickle file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"all_results": all_results, "metadata": metadata or {}}
+    with open(path, "wb") as f:
+        pickle.dump(data, f)
+    print(f"Results saved to: {path}")
+
+
+def load_results(path):
+    """Load evaluation results and metadata from a pickle file."""
+    path = Path(path)
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+    return data.get("all_results"), data.get("metadata", {})
 
 
 def evaluate_across_parameters(
@@ -533,6 +553,18 @@ def main():
         help="Output path for the plot",
     )
     parser.add_argument(
+        "--save-results",
+        type=str,
+        default=None,
+        help="Path to save evaluation results (pickle)",
+    )
+    parser.add_argument(
+        "--load-results",
+        type=str,
+        default=None,
+        help="Path to load previously saved results (pickle). If provided, evaluation will be skipped and the saved results will be plotted.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_false",
@@ -574,18 +606,42 @@ def main():
     print(f"D_min: {args.D_min}, D_max: {args.D_max}")
     print("=" * 70)
 
-    # Evaluate across all parameter values
-    all_results = evaluate_across_parameters(
-        param_list,
-        param_type,
-        args.num_samples,
-        args.methods,
-        fixed_fps,
-        fixed_noise,
-        args.D_min,
-        args.D_max,
-        verbose=args.verbose or True,
-    )
+    # Load previously saved results or evaluate across all parameter values
+    if args.load_results:
+        all_results, metadata = load_results(args.load_results)
+        print(f"\nLoaded results from: {args.load_results}")
+        methods_to_plot = metadata.get("methods", args.methods)
+        param_type = metadata.get("param_type", param_type)
+        D_min_plot = metadata.get("D_min", args.D_min)
+        D_max_plot = metadata.get("D_max", args.D_max)
+    else:
+        all_results = evaluate_across_parameters(
+            param_list,
+            param_type,
+            args.num_samples,
+            args.methods,
+            fixed_fps,
+            fixed_noise,
+            args.D_min,
+            args.D_max,
+            verbose=args.verbose or True,
+        )
+        methods_to_plot = args.methods
+        D_min_plot = args.D_min
+        D_max_plot = args.D_max
+
+        if args.save_results:
+            metadata = {
+                "methods": args.methods,
+                "param_type": param_type,
+                "D_min": args.D_min,
+                "D_max": args.D_max,
+                "param_list": param_list,
+                "fixed_fps": fixed_fps,
+                "fixed_noise": fixed_noise,
+                "n_samples": args.num_samples,
+            }
+            save_results(args.save_results, all_results, metadata)
 
     # Generate plot
     output_file = args.output
@@ -593,8 +649,15 @@ def main():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"latency_evaluation_{param_type}_{timestamp}.png"
 
+    # Generate plot (either from computed results or loaded results)
+    output_file = args.output
+    if output_file is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"latency_evaluation_{param_type}_{timestamp}.png"
+
+    # When plotting, ensure we use the appropriate methods and D_min/D_max
     plot_results(
-        all_results, args.methods, param_type, args.D_min, args.D_max, output_file
+        all_results, methods_to_plot, param_type, D_min_plot, D_max_plot, output_file
     )
 
 
