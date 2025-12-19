@@ -8,12 +8,12 @@ Produces a plot showing estimation error vs the varied parameter.
 
 import argparse
 import multiprocessing
+import pickle
 from datetime import datetime
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
-from pathlib import Path
 
 from data_generation.simulation import simulate_sample
 from latency_methods import LatencyMethods
@@ -347,6 +347,18 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         Path to save the figure.
     """
 
+    SMALL_SIZE = 18
+    MEDIUM_SIZE = 20
+    BIG_SIZE = 22
+
+    plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
+    plt.rc("axes", titlesize=SMALL_SIZE)  # fontsize of the axes title
+    plt.rc("axes", labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+    plt.rc("xtick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
+    plt.rc("ytick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
+    plt.rc("legend", fontsize=SMALL_SIZE)  # legend fontsize
+    plt.rc("figure", titlesize=BIG_SIZE)  # fontsize of the figure title
+
     # The dictonary containing all results (all_results) has the following structure:
     #   {
     #       diameter-tuple: {
@@ -360,11 +372,12 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
     #           ...
     #       }
     # }
+
     n_cols = len(next(iter(all_results.values())))
     n_rows = len(all_results.keys())
     fig = plt.figure(
         constrained_layout=True,
-        figsize=(8 * n_cols, 5 * n_rows),
+        figsize=(8 * n_cols, 7 * n_rows),
     )
 
     # Set x-axis label based on parameter type
@@ -376,7 +389,6 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         param_info = f"fps="
     fig.suptitle(
         f"Latency Estimation Error Across {xlabel}\n",
-        fontsize=14,
         weight="bold",
     )
 
@@ -391,7 +403,6 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
     ):
         subfig.suptitle(
             f"(D_min={diameter_tuple[0]}, D_max={diameter_tuple[1]})",
-            fontsize=14,
         )
 
         axs = subfig.subplots(nrows=1, ncols=n_cols)
@@ -449,14 +460,21 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
                 linestyle="--",
             )
 
-            ax.set_xlabel(xlabel, fontsize=12)
-            ax.set_ylabel(f"MAE Error (ms)", fontsize=12)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(f"MAE Error (ms)")
             ax.set_yscale("log", base=10)
-            ax.set_title(
-                f"MAE over {xlabel} ({param_info+str(eval_value)})", fontsize=13
-            )
+            ax.set_title(f"MAE over {xlabel} ({param_info+str(eval_value)})")
             ax.grid(True, alpha=0.3)
-            ax.legend(fontsize=10)
+
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    fig.legend(
+        by_label.values(),
+        by_label.keys(),
+        # mode="expand",
+        ncols=2,
+        loc="outside upper right",
+    )
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches="tight")

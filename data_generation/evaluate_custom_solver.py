@@ -239,7 +239,7 @@ if __name__ == "__main__":
         mses.append(mse)
 
     # Plot MSE vs sample rate
-    plt.figure(figsize=(8, 4))
+    plt.figure(figsize=(8, 3))
     plt.plot(rates, mses, marker="o")
     plt.xlabel("Sample rate (Hz)")
     plt.ylabel("MSE between solvers ($mm^2$)")
