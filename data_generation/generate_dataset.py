@@ -124,34 +124,34 @@ if __name__ == "__main__":
         "--duration",
         type=float,
         default=stat_values.DURATION,
-        help="Duration of each recording in seconds (default: 5.0)",
+        help="Duration of each recording in milliseconds (default: 5000)",
     )
     parser.add_argument(
         "-f",
         "--fps",
         type=float,
         default=stat_values.FPS,
-        help="Sampling rate in fps (default: 25.0)",
+        help="Sampling rate in fps (default: 30.0)",
     )
     parser.add_argument(
         "-s",
         "--stim-time",
         type=float,
         default=stat_values.LIGHT_STIMULUS_START,
-        help="Time when stimulus turns on in seconds (default: 0.5)",
+        help="Time when stimulus turns on in milliseconds (default: 500)",
     )
     parser.add_argument(
         "-l",
         "--led-duration",
         type=float,
         default=stat_values.LIGHT_STIMULUS_DURATION,
-        help="Duration of LED pulse in seconds (default: 0.167)",
+        help="Duration of LED pulse in milliseconds (default: 200)",
     )
     parser.add_argument(
         "--noise",
         type=float,
         default=0.03,
-        help="Duration of LED pulse in seconds (default: 0.03)",
+        help="Standard deviation of gaussian noise (default: 0.03)",
     )
 
     args = parser.parse_args()

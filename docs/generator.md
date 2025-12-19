@@ -2,11 +2,10 @@
 ## How the PLR curves are created
 
 This repository contains a physiologically realistic simulator for generating synthetic Pupil Light Reflex (PLR) signals.  
-The simulation is based on the **nonlinear differential model** of Pamplona & Oliveira [1], extended with:
+The simulation is based on the **nonlinear differential model** of Pamplona & Oliveira [1], including:
 
 - **Population-level physiological variability**  
 - **Stimulus flux optimization** to achieve target constriction during short light pulses
-- **Automatic tuning of asymmetric constriction vs. dilation speeds** to match empirical population PLR metrics
 - **Hippus-like drift** and **measurement noise**  
 - Delay-based **neural latency** modeling
 
@@ -21,6 +20,10 @@ The pupil diameter \(D(t)\) is governed by the nonlinear dynamic equation:
 $$
 \frac{dM}{dD}\frac{dD}{dt} + 2.3026\,\mathrm{atanh}\!\left(\frac{D - 4.9}{3}\right) = 5.2 - 0.45\ln\!\left(\frac{\phi(t - \tau)}{\phi_{\mathrm{ref}}}\right)\tag{1}
 $$
+with
+$$
+M(D) = \operatorname{atanh} \left( \frac{D-4.9}{3} \right),
+$$
 
 Where:
 
@@ -29,35 +32,23 @@ Where:
 | $D(t)$ | pupil diameter (mm) |
 | $\phi(t)$ | retinal illuminance (“light flux”) |
 | $\tau$ | neural latency |
-| $dM/dD$ | iris mechanical stiffness (set to 1.0 for stability) |
-| $\phi_{\mathrm{ref}}$ | reference illuminance (default = 1.0) |
+| $\phi_{\mathrm{ref}}$ | reference illuminance (default = 4.8118e-10) |
 
 The **atanh term** models nonlinear iris muscle tension; the **log term** implements the Weber–Fechner law for brightness perception.
 
 ## Numerical Integration
-The equation is discretized using explicit Euler integration:
+The equation is discretized using explicit Euler integration.
+The retinal illuminance is delayed by the neural latency. The calculation of the delayed stimulus $\phi(t-\tau)$ is as follows:
 
-```python
-dDdt = (rhs - mech) / dMdD
-if dDdt < 0:
-    dt_eff = dt / S            # fast constriction
-else:
-    dt_eff = dt / (3 * S)      # slow dilation
-D[i] = D[i - 1] + dDdt * dt
-```
-The retinal illuminance is delayed by the neural latency using a simple index offset:
-```python
-idx_delay = max(0, i - delay_samples)
-phi_effective = phi_arr[idx_delay]
-```
-
-## 2. Population-Level Parameter Sampling
-To generate realistic human-like PLR variability, the simulator samples subject parameters from Capó-Aponte et al. [2]:
-| Parameter                | Mean    | SD      |
-| ------------------------ | ------- | ------- |
-| Maximum diameter (mm)    | 5.63    | 0.79    |
-| Minimum diameter (mm)    | 3.78    | 0.56    |
-| Constriction latency (s) | 0.21175 | 0.00951 |
+Let $t_k$ denote the time of a luminance change, $\tau_k$ the latency associated with the new stimulus, and $\phi(t_{k-1})$ the stimulus immediately preceding the change. Shorter latencies are adopted immediately, while longer latencies are applied only after the currently active latency window has elapsed. Specifically, when a shorter latency becomes active, the tuple $(\tau_\mathrm{active}, t_\mathrm{active}, \phi_\mathrm{hold}) = (\tau_k, t_k, \phi(t_{k-1}))$ is stored. Longer latencies are adopted only for $t \geq t_\mathrm{active} + \tau_\mathrm{active}$. The delayed stimulus is thus defined as
+$$
+    \phi_\mathrm{delayed}(t) =
+    \begin{cases}
+        \phi_\mathrm{hold}, & t < t_\mathrm{active} + \tau_\mathrm{active}, \\
+        \phi(t - \tau_\mathrm{active}), & t \geq t_\mathrm{active} + \tau_\mathrm{active}.
+    \end{cases}
+$$
+This ensures that brief light pulses with durations shorter than the nominal latency elicit a single, uninterrupted pupil response.
 
 ## 3. Mapping Pupil Diameter → Illuminance (Inverse Steady-State)
 The steady-state solution of Eq. (1) with $dD/dt=0$ yields:
