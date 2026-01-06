@@ -22,12 +22,14 @@ python3 -m pip install -r requirements.txt
 
 Usage
 -----
+
+### Data generation
 Generate synthetic data:
 
 ```bash
 python3 -m data_generation.generate_dataset
 ```
-This will generate synthetic data with the default parameters. Default Parameters are choosen from the work of Capó-Aponte et al.
+This will generate a synthetic dataset with the default parameters. Default parameters can be changed in [stat_values.py](data_generation/stat_values.py)
 
 Possible options the data generation:
 ```bash
@@ -48,6 +50,14 @@ options:
 ```
 For further information about how the simulation model works and data is generated, please refer to:
 [data_generation/Generator.md](data_generation/Generator.md)
+
+### Data Visualization
+A short desktop visualizer lets you explore individual recordings and
+compare latency estimation methods interactively: load a folder of
+.npz files, view observed vs clean pupil traces with frame sample
+markers, inspect stimulus timing, and run the available estimation
+algorithms. For detailed usage, features and batch-evaluation options,
+see the visualizer documentation: [visualizer documentation](docs/visualizer.md).
 
 
 Adding New Methods
