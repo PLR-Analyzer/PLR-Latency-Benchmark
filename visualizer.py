@@ -321,7 +321,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
                 message = (
                     f"Batch evaluation complete.\n\n"
                     f"Results saved to:\n{csv_path}\n\n"
-                    f"Mean Absolute Error: {mae:.4f} s\n"
+                    f"Mean Absolute Error: {mae:.4f} ms\n"
                     f"Files processed: {len(results)}"
                 )
             else:

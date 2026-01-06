@@ -245,166 +245,6 @@ class LatencyMethods:
         }
 
     @staticmethod
-    def _flux_from_diameter(D, phi_ref=1.0):
-        """Compute retinal flux φ that gives steady-state diameter D."""
-        arg = np.clip((D - 4.9) / 3.0, -0.9999, 0.9999)
-        rhs = 5.2 - 2.3026 * np.arctanh(arg)
-        phi_ratio = np.exp(rhs / 0.45)
-        return phi_ref * phi_ratio
-
-    @staticmethod
-    def _simulate_dynamics(phi_arr, dt, D0, delay_samples, S, phi_ref=1.0):
-        """Simulate diameter time course for a given `phi_arr` using parameter `S`.
-
-        The dynamics follow the implementation in `simulation.py`:
-        - dDdt = rhs - mech
-        - constriction (dDdt < 0) uses dt_eff = dt / S
-        - dilation  (dDdt >= 0) uses dt_eff = dt / (3*S)
-        """
-        n = len(phi_arr)
-        D = np.zeros(n)
-        D[0] = D0
-        for i in range(1, n):
-            idx_delay = max(0, i - delay_samples)
-            ratio = max(1e-9, phi_arr[idx_delay] / phi_ref)
-            rhs = 5.2 - 0.45 * np.log(ratio)
-            arg = np.clip((D[i - 1] - 4.9) / 3.0, -0.9999, 0.9999)
-            mech = 2.3026 * np.arctanh(arg)
-            dDdt = rhs - mech
-            # Eq 17 effect: constriction fast (dt/S), dilation slow (dt/(3S))
-            if dDdt < 0:
-                dt_eff = dt / max(1e-9, S)
-            else:
-                dt_eff = dt / max(1e-9, 3.0 * S)
-            D[i] = D[i - 1] + dDdt * dt_eff
-        return D
-
-    @staticmethod
-    def model_fit(t, signal, stim_time, led_duration, fps):
-        """Fit PLR model to observed data and extract latency from parameters.
-
-        Fits the parametric model from the simulation to find:
-        - Baseline diameter (D_max)
-        - Stimulus diameter (D_min)
-        - Latency (tau_latency)
-        - Stimulus strength (phi_stim)
-
-        Parameters
-        ----------
-        t : array
-            Time points (seconds).
-        signal : array
-            Observed pupil diameter (mm).
-        stim_time : float
-            Time when stimulus starts (seconds).
-        led_duration : float
-            Duration of stimulus (seconds).
-        fps : float
-            Sampling rate (frames per second).
-
-        Returns
-        -------
-        float
-            Estimated latency time (seconds).
-        dict
-            Visualization data with type "model_fit" and fitted model output.
-        """
-        dt = 1.0 / fps
-
-        # Initial guesses from data
-        D_max_guess = float(np.mean(signal[: int(stim_time * fps)]))
-        D_min_guess = float(np.min(signal[int(stim_time * fps) :]))
-        tau_latency_guess = 0.2
-        S_guess = 0.5
-
-        def objective(params):
-            D_max, D_min, tau_latency, S, phi_stim_factor = params
-
-            # Constrain parameters
-            # D_max = np.clip(D_max, 3.0, 7.0)
-            # D_min = np.clip(D_min, 2.5, D_max - 0.5)
-            # tau_latency = np.clip(tau_latency, 0.05, 1.0)
-            # phi_stim_factor = np.clip(phi_stim_factor, 0.5, 10.0)
-
-            # Compute baseline flux
-            phi_baseline = LatencyMethods._flux_from_diameter(D_max, phi_ref=1.0)
-            phi_stim_ss = LatencyMethods._flux_from_diameter(D_min, phi_ref=1.0)
-
-            # Determine stimulus flux
-            phi_stim = phi_stim_ss * phi_stim_factor
-
-            # Build stimulus array
-            phi_arr = np.full_like(t, phi_baseline)
-            on_mask = (t >= stim_time) & (t < stim_time + led_duration)
-            phi_arr[on_mask] = phi_stim
-
-            # Simulate using S
-            delay_samples = int(np.ceil(tau_latency / dt))
-            try:
-                D_sim = LatencyMethods._simulate_dynamics(
-                    phi_arr, dt, D_max, delay_samples, S, phi_ref=1.0
-                )
-            except Exception:
-                return np.full_like(signal, 1e10)
-
-            # Error: focus on response region
-            response_start = int((stim_time + tau_latency) * fps)
-            response_end = int((stim_time + tau_latency + 2.0) * fps)
-            response_end = min(response_end, len(signal))
-
-            if response_start >= len(signal):
-                return np.full_like(signal, 1e10)
-
-            error = (
-                signal[response_start:response_end] - D_sim[response_start:response_end]
-            )
-            return error
-
-        # Optimize
-        p0 = [D_max_guess, D_min_guess, tau_latency_guess, S_guess, 2.0]
-        try:
-            result = least_squares(
-                objective,
-                p0,
-                bounds=(
-                    [3.0, 2.5, 0.05, 0.1, 0.5],
-                    [7.0, D_max_guess - 0.1, 1.0, 100.0, float("inf")],
-                ),
-                max_nfev=1000,
-            )
-            D_max_fit, D_min_fit, tau_latency_fit, S_fit, phi_stim_factor = result.x
-        except Exception:
-            # Fall back to initial guess
-            D_max_fit, D_min_fit, tau_latency_fit, S_fit, phi_stim_factor = p0
-
-        # Generate fitted model
-        phi_baseline = LatencyMethods._flux_from_diameter(D_max_fit, phi_ref=1.0)
-        phi_stim_ss = LatencyMethods._flux_from_diameter(D_min_fit, phi_ref=1.0)
-        phi_stim = phi_stim_ss * phi_stim_factor
-
-        phi_arr = np.full_like(t, phi_baseline)
-        on_mask = (t >= stim_time) & (t < stim_time + led_duration)
-        phi_arr[on_mask] = phi_stim
-
-        delay_samples = int(np.ceil(tau_latency_fit / dt))
-        D_fitted = LatencyMethods._simulate_dynamics(
-            phi_arr, dt, D_max_fit, delay_samples, S_fit, phi_ref=1.0
-        )
-
-        latency = stim_time + tau_latency_fit
-
-        fit_data = {
-            "D_fitted": D_fitted,
-            "D_max": D_max_fit,
-            "D_min": D_min_fit,
-            "tau_latency": tau_latency_fit,
-            "S": float(S_fit),
-            "phi_stim_factor": phi_stim_factor,
-        }
-
-        return latency, {"type": "model_fit", "fit_data": fit_data}
-
-    @staticmethod
     def max_negative_acceleration(t, signal, stim_time):
         """Compute latency as the time of maximum negative acceleration after stimulus.
 
@@ -483,7 +323,6 @@ class LatencyMethods:
             "Threshold crossing",
             "Piecewise-linear fit",
             "Exponential fit",
-            "Fit to simulation model",
             "Bergamin & Kardon",
         ]
 
@@ -523,11 +362,6 @@ class LatencyMethods:
             return LatencyMethods.piecewise_linear(t, signal, stim_time)
         elif method_name == "Exponential fit":
             return LatencyMethods.exponential_fit(t, signal, stim_time)
-        elif method_name == "Fit to simulation model":
-            if led_duration is None or fps is None:
-                dt = t[1] - t[0]
-                return np.nan, {"type": "derivative", "data": np.gradient(signal, dt)}
-            return LatencyMethods.model_fit(t, signal, stim_time, led_duration, fps)
         elif method_name == "Bergamin & Kardon":
             return LatencyMethods.max_negative_acceleration(t, signal, stim_time)
         else:

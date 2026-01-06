@@ -1,10 +1,9 @@
-=====================
-
 Desktop application for visualizing synthetic pupillary light reflex (PLR) datasets
 and testing different latency estimation methods.
 
-Features
---------
+![](../images/visualizer.png)
+
+## Features
 
 ### Data Visualization
 - Load folders with `.npz` files containing synthetic PLR recordings
@@ -19,6 +18,8 @@ Select from multiple estimation algorithms:
 - **Min derivative (smoothed)** — Applies moving average smoothing before finding minimum
 - **Threshold crossing** — Detects first crossing of derivative below a percentile threshold
 - **Piecewise-linear fit** — Fits two linear segments and finds the breakpoint (slope change)
+- **Exponential fit** — Fits a linear segement to the baseline and a exponential segment to the slope
+- **Bergamin & Kardon** — Method by Bergmain & Kardon wich uses smoothing 2nd order derivative
 
 Each method shows:
 - Prediction error (predicted latency - true latency)
@@ -39,6 +40,18 @@ Each method shows:
 - Load Folder, Previous, Next buttons for easy file browsing
 - File list sidebar shows all available `.npz` files
 - Automatic plot updates when switching files
+
+### Dataset Metrics
+- Statistical pupillometry parameters are calculated and displayed for the data set.
+   - Maximal Diameter
+   - Minimal Diameter
+   - Amplitude
+   - Constriction Latency
+   - PRT 75 (Time until 75% of the baseline diameter is reached again after the end of the light pulse)
+   - Average Constriction Velocity
+   - Maximal  Constriction Velocity
+   - Dilation Velocity
+
 
 Usage
 -----

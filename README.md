@@ -1,15 +1,15 @@
 PLR Latency Benchmark
 =====================
 
-Desktop application for visualizing synthetic pupillary light reflex (PLR) datasets
-and testing different latency estimation methods.
+Code repository for the Paper "Model-based comparison of latency estimation methods for the pupillary light reflex". 
+This code enables the evaluation and comparison of various latency detection methods for the pupillary light reflex using synthetic data with controlled conditions.
 
 Features
 --------
 
-- Data Generation
-- Data Visualization
-- Estimation Algorithm Evaluation
+- Synthetic Data Generation
+- Visualization
+- Latency Estimation Algorithm Evaluation
 
 Installation
 ------------
@@ -52,13 +52,22 @@ For further information about how the simulation model works and data is generat
 [data_generation/Generator.md](data_generation/Generator.md)
 
 ### Data Visualization
-A short desktop visualizer lets you explore individual recordings and
+A desktop visualizer lets you explore individual recordings and
 compare latency estimation methods interactively: load a folder of
 .npz files, view observed vs clean pupil traces with frame sample
 markers, inspect stimulus timing, and run the available estimation
 algorithms. For detailed usage, features and batch-evaluation options,
 see the visualizer documentation: [visualizer documentation](docs/visualizer.md).
 
+```bash
+python3 visualizer.py 
+```
+
+### Benchmark Latency Detection Algorithms
+
+- **Save/Load evaluation results** — To avoid re-running expensive benchmarks you can save the evaluation results to a file and reload them later for plotting and analysis:
+   - Save results at the end of the benchmark: `python evaluate_methods.py --fps-range 25 200 25 --noise 0.03 --save-results results`
+   - Load previously saved reesults and generate plot: `python evaluate_methods.py --load-results results --output myplot.png` 
 
 Adding New Methods
 ------------------
@@ -111,6 +120,3 @@ Authors
 --------
 
 Marcel Schepelmann
-
-
-[1] J. E. Capó-Aponte, T. A. Beltran, D. V. Walsh, W. R. Cole, und J. Y. Dumayas, „Validation of Visual Objective Biomarkers for Acute Concussion“, Military Medicine, Bd. 183, Nr. suppl_1, S. 9–17, März 2018, doi: 10.1093/milmed/usx166.
