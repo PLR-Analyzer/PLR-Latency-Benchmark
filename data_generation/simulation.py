@@ -198,20 +198,6 @@ if __name__ == "__main__":
     print(f"Calculated latency:", latency, f"Reference latency:", latency_ref)
     print(f"Simulated avg constriction velocity: {avg_v:.3f} mm/s")
     print(f"Simulated max constriction velocity: {max_v:.3f} mm/s")
-    print(
-        f"Target avg constriction velocity: {stat_values.AVG_CONSTRICTION_VELOCITY_MEAN:.3f} mm/s"
-    )
-    print(
-        f"Target max constriction velocity: {stat_values.MAX_CONSTRICTION_VELOCITY_MEAN:.3f} mm/s"
-    )
-    if avg_v is not None:
-        print(
-            f"Avg error: {avg_v - stat_values.AVG_CONSTRICTION_VELOCITY_MEAN:+.3f} mm/s"
-        )
-    if max_v is not None:
-        print(
-            f"Max error: {max_v - stat_values.MAX_CONSTRICTION_VELOCITY_MEAN:+.3f} mm/s"
-        )
 
     # plot
     plt.figure()

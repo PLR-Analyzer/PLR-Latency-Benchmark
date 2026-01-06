@@ -18,10 +18,12 @@ from data_generation.simulation import simulate_sample
 def generate_synthetic_dataset(
     n_samples=100,
     output_dir="data",
-    duration=5.0,
-    fps=25.0,
-    stim_time=0.5,
-    led_duration=0.167,
+    duration=5000,
+    fps=30.0,
+    stim_time=500,
+    led_duration=200,
+    D_max=6.0,
+    D_min=3.0,
     noise_sd=0.03,
     verbose=True,
 ):
@@ -58,9 +60,6 @@ def generate_synthetic_dataset(
     for i in range(n_samples):
         if verbose and (i + 1) % max(1, n_samples // 10) == 0:
             print(f"Generating sample {i + 1}/{n_samples}...")
-
-        D_max = 7.0
-        D_min = 3.0
 
         # Simulate with a unique seed based on sample index
         time, D_obs, D_clean, true_latency, params = simulate_sample(
@@ -148,9 +147,21 @@ if __name__ == "__main__":
         help="Duration of LED pulse in milliseconds (default: 200)",
     )
     parser.add_argument(
+        "--D-max",
+        type=float,
+        default=stat_values.MAX_DIAMETER_MEAN,
+        help="Maximum pupil diameter in mm (default: 6.0)",
+    )
+    parser.add_argument(
+        "--D-min",
+        type=float,
+        default=stat_values.MINIMUM_DIAMETER_MEAN,
+        help="Minimum pupil diameter in mm (default: 3.0)",
+    )
+    parser.add_argument(
         "--noise",
         type=float,
-        default=0.03,
+        default=stat_values.NOISE_SD,
         help="Standard deviation of gaussian noise (default: 0.03)",
     )
 
@@ -163,5 +174,7 @@ if __name__ == "__main__":
         fps=args.fps,
         stim_time=args.stim_time,
         led_duration=args.led_duration,
+        D_max=args.D_max,
+        D_min=args.D_min,
         noise_sd=args.noise,
     )
