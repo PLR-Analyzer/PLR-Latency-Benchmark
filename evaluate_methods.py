@@ -347,9 +347,9 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         Path to save the figure.
     """
 
-    SMALL_SIZE = 18
-    MEDIUM_SIZE = 20
-    BIG_SIZE = 22
+    SMALL_SIZE = 20
+    MEDIUM_SIZE = 22
+    BIG_SIZE = 24
 
     plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
     plt.rc("axes", titlesize=SMALL_SIZE)  # fontsize of the axes title
@@ -382,13 +382,13 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
 
     # Set x-axis label based on parameter type
     if param_type == "fps":
-        xlabel = "Sample Rate (Hz)"
+        xlabel = "Sample Rates (Hz)"
         param_info = f"noise_sd="
     else:
         xlabel = "Noise SD"
         param_info = f"fps="
     fig.suptitle(
-        f"Latency Estimation Error Across {xlabel}\n",
+        f"Latency Estimation Error \nAcross {xlabel}\n",
         weight="bold",
     )
 
