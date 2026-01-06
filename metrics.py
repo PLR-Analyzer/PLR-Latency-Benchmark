@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Marcel Schepelmann <schepelmann@chi.uni-hannover.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Dataset metrics helpers for PLR visualizer.
 
 Provides functions to compute per-file PLR metrics and summarize them across

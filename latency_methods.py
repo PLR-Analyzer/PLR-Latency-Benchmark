@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Marcel Schepelmann <schepelmann@chi.uni-hannover.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Latency estimation methods for PLR analysis."""
 
 import numpy as np

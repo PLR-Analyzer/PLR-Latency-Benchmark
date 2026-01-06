@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Marcel Schepelmann <schepelmann@chi.uni-hannover.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """
 Script to fit the coefficients for Eq 18 and Eq 19 from Pamplona et al. (2009).
 Based on the data from Moon and Spencer (1944).

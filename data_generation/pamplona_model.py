@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Marcel Schepelmann <schepelmann@chi.uni-hannover.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d

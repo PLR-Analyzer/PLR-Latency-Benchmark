@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Marcel Schepelmann <schepelmann@chi.uni-hannover.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 def CtD(D):
     """Upper envelope diameter (Eq. 18)."""
     return (
