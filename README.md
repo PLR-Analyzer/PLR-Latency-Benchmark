@@ -65,9 +65,34 @@ python3 visualizer.py
 
 ### Benchmark Latency Detection Algorithms
 
-- **Save/Load evaluation results** — To avoid re-running expensive benchmarks you can save the evaluation results to a file and reload them later for plotting and analysis:
-   - Save results at the end of the benchmark: `python evaluate_methods.py --fps-range 25 200 25 --noise 0.03 --save-results results`
-   - Load previously saved reesults and generate plot: `python evaluate_methods.py --load-results results --output myplot.png` 
+During benchmarking, evaluation can be performed either using a given range with a step size of the sample rate or the noise. The specified range is displayed on the x-axis in the results. In addition, one or more fixed values can be specified for the variable that is not displayed on the x-axis. A new plot is created for each specified fixed value.
+
+Methods to be benchmarked can be selected using the “Methods” option. As default the follwing methods will be evaluated:
+- Threshold crossing
+- Min derivative
+- Piecewise-linear fit
+- Exponential fit
+- Bergamin & Kardon
+
+To evaluate all methods on a range of sample rates from 25 to 250 with a step size of 5 and fixed values of 0.01, 0.02, and 0.03 for the standard deviation of the noise, the following command can be used:
+```bash
+python3 evaluate_methods.py --num-samples 1000 --fps-range 25 250 5 --noise 0.01 0.02 0.03 -o results/noise.eps
+```
+
+If a range for the standard deviation of the noise at fixed values for the sampling rate is to be benchmarked, the following command could be used
+```bash
+python3 evaluate_methods.py --num-samples 1000 --fps 30 90 250 --noise-range 0.00 0.03 0.001 -o results/noise.eps
+```
+
+**Save/Load evaluation results** — To avoid re-running expensive benchmarks you can save the evaluation results to a file and reload them later for plotting and analysis:
+   - Save results at the end of the benchmark: 
+   ```bash
+   python3 evaluate_methods.py --fps-range 25 200 25 --noise 0.03 --save-results results
+   ```
+   - Load previously saved reesults and generate plot:
+   ```bash
+   python3 evaluate_methods.py --load-results results --output myplot.png
+   ```
 
 Adding New Methods
 ------------------
