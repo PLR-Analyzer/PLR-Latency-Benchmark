@@ -112,20 +112,9 @@ $$D_{\mathrm{obs}} = D_{\mathrm{clean}} + \mathrm{drift} + \mathrm{noise}$$
 ### Step 9 — Return results
 Return time vector, observed diameter, clean diameter, stimulus onset + latency, and all simulation parameters.
 
-## 7. Output
-The simulator returns:
-
+## Example Usage:
 ```python
-time        # time vector (s)
-D_obs       # noisy PLR diameter (mm)
-D_clean     # noise-free diameter (mm)
-true_latency  # stim_time + tau_latency
-params      # dict containing all sample-specific parameters
-```
-
-Example:
-```python
-time, D_obs, D_clean, true_lat, params = simulate_plr_eq16_population(seed=123)
+time, D_obs, D_clean, true_lat, params = simulate_sample()
 ```
 
 [1] V. F. Pamplona, M. M. Oliveira, und G. V. G. Baranoski, „Photorealistic models for pupil light reflex and iridal pattern deformation“, ACM Trans. Graph., Bd. 28, Nr. 4, S. 106:1-106:12, Sep. 2009, doi: 10.1145/1559755.1559763.
