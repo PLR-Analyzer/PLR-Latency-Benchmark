@@ -94,6 +94,10 @@ python3 evaluate_methods.py --num-samples 1000 --fps 30 90 250 --noise-range 0.0
    python3 evaluate_methods.py --load-results results --output myplot.png
    ```
 
+An example plot of the results of a benchmark over a range of standard deviations of noise with three different sampling rates is shown in the following figure:
+
+![](images/example.png)
+
 Adding New Methods
 ------------------
 
