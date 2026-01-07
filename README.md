@@ -79,15 +79,14 @@ To add a new latency estimation method:
    @staticmethod
    def my_new_method(t, signal, stim_time):
        # Your implementation here
-       return latency_time, {"type": "derivative", "data": your_data}
+       return latency_time, {"type": "your_identifier_for_plotting", "data": your_data}
    ```
 
 2. Add method name to `get_available_methods()` list in `latency_methods.py`
 
 3. Add dispatcher case in `compute_by_name()` method
 
-4. If using a different visualization type (not derivative), update `_plot_method_specific()` 
-   in `plot_widget.py` to handle the new visualization
+4. Update `_plot_method_specific()` in `plot_widget.py` to handle the new visualization
 
 Dependencies
 ------------
