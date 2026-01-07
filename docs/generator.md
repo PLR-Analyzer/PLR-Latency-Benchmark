@@ -1,4 +1,4 @@
-# 📘 Synthetic Pupil Light Reflex (PLR) Generator  
+# 👁️ Synthetic Pupil Light Reflex (PLR) Generator  
 ## How the PLR curves are created
 
 This repository contains a physiologically realistic simulator for generating synthetic Pupil Light Reflex (PLR) signals.  
@@ -34,8 +34,6 @@ Where:
 | $\tau$ | neural latency |
 | $\phi_{\mathrm{ref}}$ | reference illuminance (default = 4.8118e-10) |
 
-The **atanh term** models nonlinear iris muscle tension; the **log term** implements the Weber–Fechner law for brightness perception.
-
 ## Numerical Integration
 The equation is discretized using explicit Euler integration.
 The retinal illuminance is delayed by the neural latency. The calculation of the delayed stimulus $\phi(t-\tau)$ is as follows:
@@ -59,23 +57,16 @@ Solving for
 $$
 \phi = \phi_{ref}\cdot\exp\left[\frac{5.2 - 2.3026\,\mathrm{atanh}\!\left(\frac{D_\infty - 4.9}{3}\right)}{0.45}\right]\tag{3}
 $$
-This function (implemented as flux_from_diameter) allows the simulator to compute:
-- Baseline illuminance that produces the drawn baseline diameter $Dmax$⁡
-- Stimulus illuminance that produces the drawn minimum diameter $Dmin$⁡
+This function (implemented as `flux_from_diameter`) allows the simulator to compute:
+- Baseline illuminance that produces the selected baseline diameter $Dmax$⁡
+- Stimulus illuminance that produces the selected minimum diameter $Dmin$⁡
 
 ## 4. Light Stimulus and Flux Optimization
-### 4.1 Standard steady-state stimulus
-The illuminance required for $Dmin$⁡ at steady-state is:
-```python
-phi_stim_ss = flux_from_diameter(D_min)
-```
-### 4.2 Why optimization is needed
-In real recordings (and in your simulator), the LED is brief (e.g., 0.167 s).
-The full effect of `phi_stim_ss` cannot be reached during such short pulses because the iris dynamics are slower.
+The illuminance required for $Dmin$⁡ at steady-state is calculated in `find_required_phi` in `simulation.py`. The find_required_phi function determines what light stimulus intensity (phi) is needed to make the pupil constrict to a target diameter in the time until the pupil starts to redilate.
 
-### 4.3 New algorithm: boosting stimulus to reach the target constriction
-The simulator now includes `_find_required_phi`, which:
+With short light stimuli, the full effect of the stimulus cannot be achieved because redilation begins before the minimum pupil diameter has been reached. In order for the pupil to achieve the specified constriction, the intensity must therefore be stronger with a short light pulse than with a long light pulse.
 
+The function works as follows:
 1. Simulates the PLR for a given candidate flux
 2. Checks whether the transient minimum diameter reaches D_min
 3. Uses:
@@ -84,67 +75,42 @@ The simulator now includes `_find_required_phi`, which:
 
 This produces a stimulus strong enough to reach the physiologically realistic minimum diameter during a short LED flash.
 
-## 5. Automatic Tuning of the S Parameter
-This simulator automates tuning of the parameter S, introduced by Pamplona et al. [1], which is a constant that affects the constriction/dilation velocity and varies among individuals. The simulator is tuning S so that the simulated PLR matches known physiological metrics [2]:
-
-| Metric                        | Target (mean ± SD) |
-| ----------------------------- | ------------------ |
-| Average constriction velocity | −4.11 ± 0.44 mm/s  |
-| Maximum constriction velocity | −5.15 ± 0.99 mm/s  |
-| Dilation velocity             | +1.02 ± 0.17 mm/s  |
-| 75% recovery time             | 1.77 ± 0.38 s      |
-
-**How S is estimated**
-The simulator:
-1. Simulates the PLR for many candidate S values
-2. Measures realistic features from the simulated trace
-3. Computes a weighted squared-error loss
-4. Performs a two-stage search:
-    - coarse logarithmic grid
-    - fine grid around the best value
-
-This yields a physiologically personalized value of S for each synthetic subject.
-
-## 6. Full Simulation Pipeline
+## 5. Full Simulation Pipeline
 Each simulated PLR curve is generated as follows:
 
-### Step 1 — Draw subject parameters
-```python
-D_max ~ N(5.63, 0.79)
-D_min ~ N(3.78, 0.56)
-tau_latency ~ N(0.21175, 0.00951)
-```
+### Step 1 — Initialize time vector
+Create a discrete time vector based on fps and duration.
 
-### Step 2 — Compute steady-state retinal fluxes
-```python
-phi_baseline = flux_from_diameter(D_max)
-phi_stim_ss = flux_from_diameter(D_min)
-```
+### Step 2 — Set up baseline illuminance
+$$\phi_{\mathrm{baseline}} = \phi(D_{\max})$$
+Initialize the illuminance signal to baseline everywhere.
 
-### Step 3 — Optimize stimulus flux
-```python
-phi_stim = _find_required_phi(...)
-```
+### Step 3 — Find stimulus flux
+Use `find_required_phi()` to compute the stimulus intensity required to achieve constriction to $D_{\min}$ during the light stimulus window (accounting for the brief stimulus duration). This ensures realistic stimulus intensities.
 
-### Step 4 — Create illuminance signal with latency
-```python
-phi_arr = baseline everywhere
-phi_arr[on_mask] = phi_stim
-phi_effective = phi_arr[i - delay_samples]
-```
+### Step 4 — Create stimulus array
+$$\phi_{\mathrm{arr}}[t] = \begin{cases}
+\phi_{\mathrm{stim}} & \text{if } t_{\mathrm{stim}} \leq t < t_{\mathrm{stim}} + \Delta t_{\mathrm{stim}} \\
+\phi_{\mathrm{baseline}} & \text{otherwise}
+\end{cases}$$
 
-### Step 5 — Integrate nonlinear Eq. (16)
-This yields the clean signal D_clean.
+### Step 5 — Calculate neural latency
+Compute the latency $\tau$ from the stimulus flux using the latency model.
 
-### Step 6 — Add realistic physiological noise
-- Hippus drift (0.05–0.3 Hz sinusoid)
-- Additive Gaussian noise
+### Step 6 — Integrate the nonlinear ODE
+Simulate the pupil diameter response using explicit Euler integration with the illuminance signal (delayed by $\tau$).
 
-Final observed diameter:
+### Step 7 — Apply individual variability
+Apply an isocurve adjustment ($r_I$ parameter) to introduce population-level physiological variability in pupil response curves.
 
-$$
-D_{obs}=D_{clean}+\mathrm{drift}+\mathrm{noise}
-$$
+### Step 8 — Add hippus and measurement noise
+- **Hippus drift**: Low-frequency sinusoid (0.05–0.3 Hz) to simulate natural pupil oscillations
+- **Measurement noise**: Additive Gaussian noise ($\sigma = 0.03$ mm by default)
+
+$$D_{\mathrm{obs}} = D_{\mathrm{clean}} + \mathrm{drift} + \mathrm{noise}$$
+
+### Step 9 — Return results
+Return time vector, observed diameter, clean diameter, stimulus onset + latency, and all simulation parameters.
 
 ## 7. Output
 The simulator returns:
@@ -163,5 +129,3 @@ time, D_obs, D_clean, true_lat, params = simulate_plr_eq16_population(seed=123)
 ```
 
 [1] V. F. Pamplona, M. M. Oliveira, und G. V. G. Baranoski, „Photorealistic models for pupil light reflex and iridal pattern deformation“, ACM Trans. Graph., Bd. 28, Nr. 4, S. 106:1-106:12, Sep. 2009, doi: 10.1145/1559755.1559763.
-<br>
-[2] J. E. Capó-Aponte, T. A. Beltran, D. V. Walsh, W. R. Cole, und J. Y. Dumayas, „Validation of Visual Objective Biomarkers for Acute Concussion“, Military Medicine, Bd. 183, Nr. suppl_1, S. 9–17, März 2018, doi: 10.1093/milmed/usx166.

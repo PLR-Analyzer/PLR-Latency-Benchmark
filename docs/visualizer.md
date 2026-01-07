@@ -1,4 +1,4 @@
-# PLR Latenzy Visualizer
+# 📉 PLR Latenzy Visualizer
 
 Desktop application for visualizing synthetic pupillary light reflex (PLR) datasets
 and testing different latency estimation methods.
