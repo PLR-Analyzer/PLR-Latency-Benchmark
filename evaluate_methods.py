@@ -493,11 +493,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
             Examples:
-            # Vary FPS from 25 to 200 with step 25, fixed noise 0.03
-            python script.py --fps-range 25 200 25 --noise 0.03
+            # Vary FPS from 25 to 250 with step 5, fixed noise at 0.01, 0.02 and 0.03
+            python3 ./evaluate_methods.py --num-samples 1000 --fps-range 25 250 5 --noise 0.01 0.02 0.03 -o results/noise.eps
 
-            # Vary noise from 0.01 to 0.1 with step 0.01, fixed FPS 90
-            python script.py --noise-range 0.01 0.1 0.01 --fps 90
+            # Vary noise from 0.00 to 0.03 with step 0.001, fixed FPS at 30, 90, and 250
+            python3 ./evaluate_methods.py --num-samples 1000 --fps 30 90 250 --noise-range 0.00 0.03 0.001 -o results/noise.eps
         """,
     )
     parser.add_argument(
