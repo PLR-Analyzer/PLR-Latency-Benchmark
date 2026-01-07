@@ -113,10 +113,11 @@ class PlotWidget(QtWidgets.QWidget):
         """Plot method-specific visualization in ax2."""
         method_type = method_data.get("type", "derivative")
 
+        lines2 = labels2 = None
+
         if method_type == "derivative":
             deriv = method_data.get("data", np.zeros_like(t))
-            self.ax2.plot(t, deriv, color="C2")
-            self.ax2.set_ylabel("dD/dt")
+            self.ax2.plot(t, deriv, color="C2", label="dD/dt")
         elif method_type == "threshold":
             self.ax2.plot(t, D_obs, label="Observed", color="C0")
             self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
@@ -126,7 +127,6 @@ class PlotWidget(QtWidgets.QWidget):
                     threshold_val, color="orange", linestyle=":", label="Threshold"
                 )
             self.ax2.set_ylabel("Diameter (mm)")
-            self.ax2.legend()
             # self.ax2.set_ylim([0, 9])
         elif method_type == "piecewise":
             self.ax2.plot(t, D_obs, label="Observed", color="C0")
@@ -149,7 +149,6 @@ class PlotWidget(QtWidgets.QWidget):
                     label="Fit 2",
                 )
             self.ax2.set_ylabel("Diameter (mm)")
-            self.ax2.legend()
             # self.ax2.set_ylim([0, 9])
         elif method_type == "exponential":
             self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
@@ -185,34 +184,10 @@ class PlotWidget(QtWidgets.QWidget):
                     f_pred,
                     color="green",
                     linewidth=2,
-                    label="Unified model fit",
-                )
-
-                # Mark latency T
-                self.ax2.axvline(
-                    T,
-                    color="orange",
-                    linestyle=":",
-                    linewidth=2,
-                    label=f"Latency T={T:.3f}s",
+                    label="Exponential model fit",
                 )
 
             self.ax2.set_ylabel("Diameter (mm)")
-            self.ax2.legend()
-            # self.ax2.set_ylim([0, 9])
-
-        elif method_type == "model_fit":
-            self.ax2.plot(t, D_obs, label="Observed", color="C0", linewidth=1.5)
-            self.ax2.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
-            fit_data = method_data.get("fit_data")
-            if fit_data is not None:
-                D_fitted = fit_data.get("D_fitted")
-                if D_fitted is not None:
-                    self.ax2.plot(
-                        t, D_fitted, label="Fitted Model", color="green", linewidth=2
-                    )
-            self.ax2.set_ylabel("Diameter (mm)")
-            self.ax2.legend()
             # self.ax2.set_ylim([0, 9])
         elif method_type == "acceleration":
             deriv1 = method_data.get("deriv1")
@@ -251,10 +226,8 @@ class PlotWidget(QtWidgets.QWidget):
             self.ax2.tick_params(axis="y", labelcolor="C2")
             ax2_secondary.tick_params(axis="y", labelcolor="C3")
 
-            # Combine legends from both axes
-            lines1, labels1 = self.ax2.get_legend_handles_labels()
+            # Get legend handles and labels from secondary axis
             lines2, labels2 = ax2_secondary.get_legend_handles_labels()
-            self.ax2.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
 
         # Common elements for second subplot
         self.ax2.set_xlabel("Time (s)")
@@ -269,3 +242,9 @@ class PlotWidget(QtWidgets.QWidget):
             self.ax2.axvline(
                 true_latency, color="magenta", linestyle="--", label="True"
             )
+        if lines2 and labels2:
+            # Combine legends from both axes
+            lines1, labels1 = self.ax2.get_legend_handles_labels()
+            self.ax2.legend(lines2 + lines1, labels2 + labels1)
+        else:
+            self.ax2.legend()
