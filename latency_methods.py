@@ -273,9 +273,9 @@ class LatencyMethods:
         # Step 1: Apply Savitzky-Golay filter (5-point, 2nd order polynomial)
         signal_smoothed = savgol_filter(signal, window_length=5, polyorder=2)
 
-        # Step 2: Cubic spline interpolation for higher resolution (600 Hz)
+        # Step 2: Cubic spline interpolation for higher resolution (300 Hz)
         f_cubic = interp1d(t, signal_smoothed, kind="cubic", fill_value="extrapolate")
-        t_interp = np.linspace(t[0], t[-1], int((t[-1] // 1000) * 600))
+        t_interp = np.linspace(t[0], t[-1], int((t[-1] // 1000) * 300))
         signal_interp = f_cubic(t_interp)
         dt_interp = t_interp[1] - t_interp[0]
 
