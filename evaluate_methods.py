@@ -398,6 +398,7 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
 
     # create nx1 subfigs for rows
     subfigs = fig.subfigures(nrows=n_rows, ncols=1)
+    subfigs = np.atleast_1d(subfigs)  # Ensure subfigs is always iterable
 
     # Plot each metric
     colors = plt.cm.tab10(np.linspace(0, 1, len(method_names)))
@@ -410,6 +411,7 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
         )
 
         axs = subfig.subplots(nrows=1, ncols=n_cols)
+        axs = np.atleast_1d(axs)  # Ensure axs is always iterable
         for idx_hori, (eval_value, ax) in enumerate(
             zip(sorted(all_results[diameter_tuple].keys()), axs)
         ):
