@@ -76,27 +76,6 @@ def find_required_phi(
     return high
 
 
-def _compute_constriction_metrics(time, D, stim_time, tau_latency):
-    """
-    Compute average and maximal constriction velocities from a simulated trace.
-    Returns (avg_constr_vel, max_constr_vel) in mm/s (both typically negative).
-    """
-    dt = float(time[1] - time[0]) / 700
-    search_start_t = stim_time + tau_latency
-    i_start = int(np.searchsorted(time, search_start_t))
-    if i_start >= len(D) - 1:
-        return None, None
-    # find minimum after onset
-    i_min_rel = np.argmin(D[i_start:])
-    i_min = i_start + int(i_min_rel)
-    if i_min <= i_start:
-        return None, None
-    deriv = np.gradient(D, dt)
-    avg_constr_vel = float(np.mean(deriv[i_start:i_min]))
-    max_constr_vel = float(np.min(deriv[i_start:i_min]))
-    return avg_constr_vel, max_constr_vel
-
-
 def simulate_sample(
     duration=stat_values.DURATION,
     fps=stat_values.FPS,
@@ -107,10 +86,11 @@ def simulate_sample(
     seed=42,
     noise_sd=0.03,
     drift_amp=0.05,
+    integration_dt=1,
 ):
-    np.random.seed(seed)  # use seed for repruducabilireproducibilityty
+    np.random.seed(seed)  # use seed for reproducibility
 
-    n = int(fps * duration // 1000)
+    n = int(duration * integration_dt)
     time = np.linspace(0.0, duration, n)
 
     phi_arr = phi = np.full(n, phi_from_diameter(D_max))
@@ -156,57 +136,23 @@ def simulate_sample(
         hippus_freq=hippus_freq,
     )
 
-    return time, D_obs, D_clean, stim_time + tau_latency, params
+    D_obs = np.interp(
+        np.linspace(0, duration, int(duration * fps / 1000.0)),
+        time,
+        D_obs,
+    )
+    time_obs = np.linspace(0.0, duration, int(duration * fps / 1000.0))
+
+    return time_obs, D_obs, time, D_clean, stim_time + tau_latency, params
 
 
 if __name__ == "__main__":
-    n = int(stat_values.FPS * stat_values.DURATION // 1000)
-    time = np.linspace(0.0, stat_values.DURATION, n)
-
-    D_max = stat_values.MAX_DIAMETER_MEAN
-    D_min = stat_values.MINIMUM_DIAMETER_MEAN
-
-    phi_arr = phi = np.full(n, phi_from_diameter(D_max))
-    on_mask = (time >= stat_values.LIGHT_STIMULUS_START) & (
-        time < stat_values.LIGHT_STIMULUS_START + stat_values.LIGHT_STIMULUS_DURATION
-    )
-
-    phi_stim = find_required_phi(
-        D_max,
-        D_min,
-        phi_from_diameter(D_max),
-        phi_from_diameter(D_min),
-        time,
-        on_mask,
-        S,
-        tol=1e-3,
-        max_factor=1e6,
-    )
-    phi_arr[on_mask] = phi_stim
-    latency_ref = calc_latency(0.4, blondels_to_footlamberts(phi_to_blondels(phi[0])))
-    latency = calc_latency(0.4, blondels_to_footlamberts(phi_to_blondels(phi_stim)))
-
-    D = simulate_dynamics_euler(phi_arr, time, D_max, S)
-
-    r_l = np.random.random()
-    print(f"Using r_I = {r_l:.4f} for individual variability adjustment")
-    D = apply_isocurve(D, r_l)
-
-    # compute constriction metrics to validate fit
-    avg_v, max_v = _compute_constriction_metrics(
-        time, D, stat_values.LIGHT_STIMULUS_START, latency
-    )
-    print(
-        f"Baseline phi: {phi_from_diameter(D_max) * 1e6:.3e}\tStimulus phi: {phi_stim * 1e6:.3e} lux"
-    )
-    print(f"Calculated latency:", latency, f"Reference latency:", latency_ref)
-    print(f"Simulated avg constriction velocity: {avg_v:.3f} mm/s")
-    print(f"Simulated max constriction velocity: {max_v:.3f} mm/s")
+    time_obs, D_obs, time, D_clean, onset, params = simulate_sample()
 
     # plot
     plt.figure()
-    plt.plot(time, D, label="Simulated Diameter")
-    plt.scatter(time, D)
+    plt.plot(time, D_clean, label="Simulated Diameter")
+    plt.scatter(time_obs, D_obs)
     plt.xlabel("Time (s)")
     plt.ylabel("Diameter (mm)")
     plt.title("PLR Simulation Test")
@@ -218,7 +164,7 @@ if __name__ == "__main__":
         label="Stimulus",
     )
     plt.axvline(
-        stat_values.LIGHT_STIMULUS_START + latency,
+        onset,
         color="red",
         linestyle="--",
         label="Latency",
