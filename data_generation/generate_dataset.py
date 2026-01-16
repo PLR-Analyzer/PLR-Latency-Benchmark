@@ -66,7 +66,7 @@ def generate_synthetic_dataset(
             print(f"Generating sample {i + 1}/{n_samples}...")
 
         # Simulate with a unique seed based on sample index
-        time, D_obs, D_clean, true_latency, params = simulate_sample(
+        _, D_obs, D_clean, true_latency, params = simulate_sample(
             duration=duration,
             fps=fps,
             stim_time=stim_time,

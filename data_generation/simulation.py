@@ -143,15 +143,17 @@ def simulate_sample(
     )
     time_obs = np.linspace(0.0, duration, int(duration * fps / 1000.0))
 
-    return time_obs, D_obs, time, D_clean, stim_time + tau_latency, params
+    return time_obs, D_obs, D_clean, stim_time + tau_latency, params
 
 
 if __name__ == "__main__":
-    time_obs, D_obs, time, D_clean, onset, params = simulate_sample()
+    time_obs, D_obs, D_clean, onset, params = simulate_sample()
+
+    time_clean = np.linspace(0, time_obs[-1], len(D_clean))
 
     # plot
     plt.figure()
-    plt.plot(time, D_clean, label="Simulated Diameter")
+    plt.plot(time_clean, D_clean, label="Simulated Diameter")
     plt.scatter(time_obs, D_obs)
     plt.xlabel("Time (s)")
     plt.ylabel("Diameter (mm)")
