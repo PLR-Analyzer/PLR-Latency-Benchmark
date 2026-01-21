@@ -7,7 +7,7 @@
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
-from scipy.optimize import least_squares, minimize
+from scipy.optimize import least_squares
 from scipy.signal import savgol_filter
 
 
@@ -136,7 +136,7 @@ class LatencyMethods:
             Visualization data with type "piecewise" and fitted line coefficients.
         """
 
-        latency_guess = stim_time + 0.2  # rough mean from literatur
+        latency_guess = stim_time + 200  # rough mean from literatur
         # Calcualte relevant fitting windows
         mask = (t >= 0) & (t <= t[np.argmin(signal)])
         tt = t[mask]

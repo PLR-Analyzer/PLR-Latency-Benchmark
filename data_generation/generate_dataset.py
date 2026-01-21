@@ -70,7 +70,7 @@ def generate_synthetic_dataset(
             duration=duration,
             fps=fps,
             stim_time=stim_time,
-            stim_duration=200,
+            stim_duration=led_duration,
             D_min=D_min,
             D_max=D_max,
             seed=i,  # Deterministic seed based on index
