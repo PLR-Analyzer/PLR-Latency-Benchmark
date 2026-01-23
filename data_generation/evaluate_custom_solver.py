@@ -11,7 +11,6 @@ from data_generation.pamplona_model import (
     blondels_to_footlamberts,
     calc_latency,
     diameter_from_phi,
-    phi_from_diameter,
     plr_rhs_with_latency,
 )
 
@@ -167,26 +166,26 @@ if __name__ == "__main__":
         ax.axvspan(
             stim_changes[0],
             stim_changes[1],
-            color="coral",
-            alpha=0.1,
+            color="lavenderblush",
             label="$10^{-2}$blondel",
         )
         ax.axvspan(
             stim_changes[1],
             stim_changes[2],
-            color="gold",
-            alpha=0.1,
+            color="lemonchiffon",
             label="$10^{2}$blondel",
         )
         ax.axvspan(
             stim_changes[2],
             stim_changes[3],
-            color="powderblue",
-            alpha=0.1,
+            color="azure",
             label="$10^{-0.5}$blondel",
         )
         ax.axvspan(
-            stim_changes[3], duration, color="fuchsia", alpha=0.1, label="$10$blondel"
+            stim_changes[3],
+            duration,
+            color="pink",
+            label="$10$blondel",
         )
         ax.legend()
         ax.grid()
