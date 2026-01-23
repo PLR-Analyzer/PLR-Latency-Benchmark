@@ -19,6 +19,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from data_generation import stat_values
 from data_generation.simulation import simulate_sample
 from latency_methods import LatencyMethods
 
@@ -244,9 +245,9 @@ def evaluate_across_parameters(
     fixed_noise,
     D_min,
     D_max,
-    duration=5000,
-    stim_time=500,
-    led_duration=200,
+    duration=stat_values.DURATION,
+    stim_time=stat_values.LIGHT_STIMULUS_START,
+    led_duration=stat_values.LIGHT_STIMULUS_DURATION,
     verbose=True,
 ):
     """

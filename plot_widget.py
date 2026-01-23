@@ -31,8 +31,9 @@ class PlotWidget(QtWidgets.QWidget):
 
     def plot_data(
         self,
-        t,
+        t_obs,
         D_obs,
+        t_clean,
         D_clean,
         stim_time,
         led_duration,
@@ -63,9 +64,9 @@ class PlotWidget(QtWidgets.QWidget):
         """
         # First subplot: observed and clean data
         self.ax1.clear()
-        self.ax1.plot(t, D_obs, label="Observed", color="C0")
-        self.ax1.plot(t, D_clean, label="Clean", color="C1", linestyle="--")
-        self.ax1.scatter(t, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
+        self.ax1.plot(t_obs, D_obs, label="Observed", color="C0")
+        self.ax1.plot(t_clean, D_clean, label="Clean", color="C1", linestyle="--")
+        self.ax1.scatter(t_obs, D_obs, color="C0", s=20, alpha=0.5, zorder=3)
         self.ax1.set_ylabel("Diameter (mm)")
         self.ax1.axvspan(stim_time, stim_time + led_duration, color="yellow", alpha=0.2)
 
@@ -87,9 +88,8 @@ class PlotWidget(QtWidgets.QWidget):
             self.ax2_secondary = None
         self.ax2.clear()
         self._plot_method_specific(
-            t,
+            t_obs,
             D_obs,
-            D_clean,
             stim_time,
             led_duration,
             predicted_latency,
@@ -103,7 +103,6 @@ class PlotWidget(QtWidgets.QWidget):
         self,
         t,
         D_obs,
-        D_clean,
         stim_time,
         led_duration,
         predicted_latency,

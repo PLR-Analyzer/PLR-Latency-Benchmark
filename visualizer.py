@@ -348,17 +348,19 @@ class LatencyVisualizer(QtWidgets.QWidget):
 
         n = len(D_obs)
         dt = 1000.0 / fps  # dt in ms
-        t = np.linspace(0, dt * (n - 1), n)  # t in ms
+        t_obs = np.linspace(0, dt * (n - 1), n)  # t in ms
+        t_clean = np.linspace(0, dt * (n - 1), len(D_clean))
         # Compute latency according to selected method
         method = self.method_combo.currentText()
         predicted_latency, method_data = LatencyMethods.compute_by_name(
-            method, t, D_obs, stim_time, led_duration, fps
+            method, t_obs, D_obs, stim_time, led_duration, fps
         )
 
         # Update plots via the plot widget
         self.plot_widget.plot_data(
-            t,
+            t_obs,
             D_obs,
+            t_clean,
             D_clean,
             stim_time,
             led_duration,
@@ -373,7 +375,7 @@ class LatencyVisualizer(QtWidgets.QWidget):
             err = predicted_latency - true_latency
             err_text = f"Error = {err:.1f} ms (predicted - true)"
 
-        quant_err = self._compute_quantization_error(t, true_latency)
+        quant_err = self._compute_quantization_error(t_obs, true_latency)
         quant_text = ""
         if np.isfinite(quant_err):
             quant_text = f"  |  Min quantization error = {quant_err:.1f} ms"
