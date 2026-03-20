@@ -155,7 +155,7 @@ if __name__ == "__main__":
     plt.figure()
     plt.plot(time_clean, D_clean, label="Simulated Diameter")
     plt.scatter(time_obs, D_obs)
-    plt.xlabel("Time (s)")
+    plt.xlabel("Time (ms)")
     plt.ylabel("Diameter (mm)")
     plt.title("PLR Simulation Test")
     plt.axvspan(
