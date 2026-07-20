@@ -19,7 +19,7 @@ def blondels_to_footlamberts(blondels):
 
 
 def phi_to_blondels(phi):
-    return phi / 10e-6
+    return phi / 1e-6
 
 
 def diameter_from_phi(phi, phi_ref=4.8118e-10):

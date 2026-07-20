@@ -20,13 +20,13 @@ def blondels_to_lumens(blondels):
 
     Based on formula from Pamplona et al..
     """
-    return blondels * 10e-6
+    return blondels * 1e-6
 
 
 def blondels_to_phi(blondels):
 
     D = 4.9 - 3 * np.tanh(0.4 * (np.log10(blondels)) - 0.5)
-    return np.pi * (D / 2) ** 2 * blondels * 10e-6
+    return np.pi * (D / 2) ** 2 * blondels * 1e-6
 
 
 def custom_solver(phi_arr, time, D0, tau_arr):
