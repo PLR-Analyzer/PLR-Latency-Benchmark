@@ -76,7 +76,7 @@ Methods to be benchmarked can be selected using the “Methods” option. As def
 
 To evaluate all methods on a range of sample rates from 25 to 250 with a step size of 5 and fixed values of 0.01, 0.02, and 0.03 for the standard deviation of the noise, the following command can be used:
 ```bash
-python3 evaluate_methods.py --num-samples 1000 --fps-range 25 250 5 --noise 0.01 0.02 0.03 -o results/noise.eps
+python3 evaluate_methods.py --num-samples 1000 --fps-range 25 250 5 --noise 0.01 0.02 0.03 -o results/fps.eps
 ```
 
 If a range for the standard deviation of the noise at fixed values for the sampling rate is to be benchmarked, the following command could be used
