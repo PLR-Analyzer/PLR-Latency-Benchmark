@@ -770,6 +770,13 @@ def main():
         D_min_plot = metadata.get("D_min", args.D_min)
         D_max_plot = metadata.get("D_max", args.D_max)
     else:
+        if not args.checkpoint:
+            print(
+                "\nWARNING: running without --checkpoint. Progress is not saved, so "
+                "if this run is interrupted all results are lost and it must start "
+                "over. Pass --checkpoint PATH to enable resumable checkpoints."
+            )
+
         metadata = {
             "methods": args.methods,
             "param_type": param_type,
