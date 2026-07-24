@@ -296,6 +296,7 @@ def evaluate_across_parameters(
     checkpoint_path=None,
     resume_results=None,
     checkpoint_metadata=None,
+    on_point_complete=None,
 ):
     """
     Evaluate methods across multiple parameter values (fps or noise).
@@ -334,6 +335,9 @@ def evaluate_across_parameters(
         already present are skipped instead of recomputed.
     checkpoint_metadata : dict, optional
         Metadata stored alongside the results in each checkpoint save.
+    on_point_complete : callable, optional
+        Called as ``on_point_complete(all_results, done_points, total_points)``
+        after every newly computed parameter point, e.g. to refresh a live plot.
 
     Returns
     -------
@@ -409,10 +413,16 @@ def evaluate_across_parameters(
                             f"-> {checkpoint_path}"
                         )
 
+                # Refresh the live figure with the results so far
+                if on_point_complete is not None:
+                    on_point_complete(all_results, done_points, total_points)
+
     return all_results
 
 
-def plot_results(all_results, method_names, param_type, D_min, D_max, output_path=None):
+def plot_results(
+    all_results, method_names, param_type, D_min, D_max, output_path=None, verbose=True
+):
     """
     Plot error metrics across parameter values for all methods.
 
@@ -565,9 +575,11 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
-        print(f"\nFigure saved to: {output_path}")
+        if verbose:
+            print(f"\nFigure saved to: {output_path}")
 
-    # plt.show()
+    # Close the figure so repeated (live) renders don't leak memory
+    plt.close(fig)
 
 
 def print_std_summary(all_results, method_names):
@@ -761,6 +773,13 @@ def main():
     print(f"D_min: {args.D_min}, D_max: {args.D_max}")
     print("=" * 70)
 
+    # Determine the output path up front so the live JPG preview can be
+    # derived from it and share its location.
+    output_file = args.output
+    if output_file is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"latency_evaluation_{param_type}_{timestamp}.png"
+
     # Load previously saved results or evaluate across all parameter values
     if args.load_results:
         all_results, metadata = load_results(args.load_results)
@@ -805,6 +824,22 @@ def main():
                 f"({n_done} parameter point(s) already computed)"
             )
 
+        # Continuously refresh a JPG preview of the figure as points complete,
+        # regardless of the final output format requested via -o.
+        live_figure_path = str(Path(output_file).with_suffix(".jpg"))
+
+        def _update_live_figure(current_results, done, total):
+            plot_results(
+                current_results,
+                args.methods,
+                param_type,
+                args.D_min,
+                args.D_max,
+                live_figure_path,
+                verbose=False,
+            )
+            print(f"  Live figure updated ({done}/{total}) -> {live_figure_path}")
+
         all_results = evaluate_across_parameters(
             param_list,
             param_type,
@@ -818,6 +853,7 @@ def main():
             checkpoint_path=args.checkpoint,
             resume_results=resume_results,
             checkpoint_metadata=metadata,
+            on_point_complete=_update_live_figure,
         )
         methods_to_plot = args.methods
         D_min_plot = args.D_min
@@ -826,19 +862,7 @@ def main():
         if args.save_results:
             save_results(args.save_results, all_results, metadata)
 
-    # Generate plot
-    output_file = args.output
-    if output_file is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"latency_evaluation_{param_type}_{timestamp}.png"
-
-    # Generate plot (either from computed results or loaded results)
-    output_file = args.output
-    if output_file is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"latency_evaluation_{param_type}_{timestamp}.png"
-
-    # When plotting, ensure we use the appropriate methods and D_min/D_max
+    # Render the final figure in the requested output format
     plot_results(
         all_results, methods_to_plot, param_type, D_min_plot, D_max_plot, output_file
     )
