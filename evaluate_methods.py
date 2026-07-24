@@ -12,6 +12,7 @@ Produces a plot showing estimation error vs the varied parameter.
 
 import argparse
 import multiprocessing
+import os
 import pickle
 from datetime import datetime
 from pathlib import Path
@@ -218,14 +219,21 @@ def compute_error_stats(errors):
     }
 
 
-def save_results(path, all_results, metadata=None):
-    """Save evaluation results and metadata to a pickle file."""
+def save_results(path, all_results, metadata=None, verbose=True):
+    """Save evaluation results and metadata to a pickle file.
+
+    The write is atomic (temp file + os.replace) so an interrupted save can
+    never corrupt an existing checkpoint.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {"all_results": all_results, "metadata": metadata or {}}
-    with open(path, "wb") as f:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "wb") as f:
         pickle.dump(data, f)
-    print(f"Results saved to: {path}")
+    os.replace(tmp_path, path)
+    if verbose:
+        print(f"Results saved to: {path}")
 
 
 def load_results(path):
@@ -234,6 +242,42 @@ def load_results(path):
     with open(path, "rb") as f:
         data = pickle.load(f)
     return data.get("all_results"), data.get("metadata", {})
+
+
+def count_completed_points(all_results):
+    """Count how many (diameter, fixed-value, swept-value) points are stored."""
+    return sum(
+        len(eval_results)
+        for diameter_results in all_results.values()
+        for eval_results in diameter_results.values()
+    )
+
+
+def checkpoint_is_compatible(saved_metadata, current_metadata):
+    """Check whether a loaded checkpoint was produced with the same run config.
+
+    Resuming into a checkpoint built with different methods, diameters, sample
+    count, or parameter grid would mix inconsistent results, so those must match.
+    """
+    keys = [
+        "methods",
+        "param_type",
+        "D_min",
+        "D_max",
+        "fixed_fps",
+        "fixed_noise",
+        "n_samples",
+    ]
+    for key in keys:
+        if saved_metadata.get(key) != current_metadata.get(key):
+            return False, key
+    saved_params = np.asarray(saved_metadata.get("param_list", []), dtype=float)
+    current_params = np.asarray(current_metadata.get("param_list", []), dtype=float)
+    if saved_params.shape != current_params.shape or not np.allclose(
+        saved_params, current_params
+    ):
+        return False, "param_list"
+    return True, None
 
 
 def evaluate_across_parameters(
@@ -249,6 +293,9 @@ def evaluate_across_parameters(
     stim_time=stat_values.LIGHT_STIMULUS_START,
     led_duration=stat_values.LIGHT_STIMULUS_DURATION,
     verbose=True,
+    checkpoint_path=None,
+    resume_results=None,
+    checkpoint_metadata=None,
 ):
     """
     Evaluate methods across multiple parameter values (fps or noise).
@@ -279,33 +326,55 @@ def evaluate_across_parameters(
         Duration of LED stimulus in milliseconds.
     verbose : bool
         Print progress.
+    checkpoint_path : str or Path, optional
+        If given, the partial results are saved here after every completed
+        parameter point so the run can be resumed.
+    resume_results : dict, optional
+        Previously computed results (e.g. loaded from a checkpoint). Points
+        already present are skipped instead of recomputed.
+    checkpoint_metadata : dict, optional
+        Metadata stored alongside the results in each checkpoint save.
 
     Returns
     -------
     dict
         Nested dictionary with parameter values as keys.
     """
-    all_results = {}
+    all_results = resume_results if resume_results is not None else {}
 
     if param_type == "fps":
         eval_values = fixed_noise
     else:
         eval_values = fixed_fps
 
+    total_points = len(list(zip(D_min, D_max))) * len(eval_values) * len(param_list)
+    done_points = count_completed_points(all_results)
+
     for diameters in zip(D_min, D_max):
         # Iterate over the diameter combinations (D_Min, D_Max).
         # Different diameter combinations will be stacked on top of each other
         # in the resulting plot
-        diameter_results = {}
+        diameter_results = all_results.setdefault(diameters, {})
         for eval_val in eval_values:
             # Iterate over the fixed noise or fps values.
             # Different fixed values will be stacked next to each other in the
             # resulting plot
-            eval_results = {}
+            eval_results = diameter_results.setdefault(eval_val, {})
             for param_value in param_list:
                 # This iterates over the parameter, that should be plotted on
                 # the x-axis (fps or noise). This is given as an argument with
                 # (MIN, MAX, STEP).
+
+                # Skip points already present from a resumed checkpoint
+                if param_value in eval_results:
+                    if verbose:
+                        print(
+                            f"  Skipping cached point "
+                            f"(diameters={diameters}, {param_type}-fixed={eval_val}, "
+                            f"param={param_value})"
+                        )
+                    continue
+
                 if param_type == "fps":
                     fps = param_value
                     noise_sd = eval_val
@@ -326,8 +395,19 @@ def evaluate_across_parameters(
                     verbose,
                 )
                 eval_results[param_value] = results
-            diameter_results[eval_val] = eval_results
-        all_results[diameters] = diameter_results
+                done_points += 1
+
+                # Checkpoint after every completed point so a crash loses at
+                # most one parameter point of work.
+                if checkpoint_path:
+                    save_results(
+                        checkpoint_path, all_results, checkpoint_metadata, verbose=False
+                    )
+                    if verbose:
+                        print(
+                            f"  Checkpoint saved ({done_points}/{total_points} points) "
+                            f"-> {checkpoint_path}"
+                        )
 
     return all_results
 
@@ -632,6 +712,14 @@ def main():
         help="Path to load previously saved results (pickle). If provided, evaluation will be skipped and the saved results will be plotted.",
     )
     parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to a checkpoint pickle. Partial results are saved here after "
+        "every parameter point; if the file already exists (and matches the run "
+        "config), completed points are loaded and skipped so the run resumes.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_false",
@@ -682,6 +770,34 @@ def main():
         D_min_plot = metadata.get("D_min", args.D_min)
         D_max_plot = metadata.get("D_max", args.D_max)
     else:
+        metadata = {
+            "methods": args.methods,
+            "param_type": param_type,
+            "D_min": args.D_min,
+            "D_max": args.D_max,
+            "param_list": param_list,
+            "fixed_fps": fixed_fps,
+            "fixed_noise": fixed_noise,
+            "n_samples": args.num_samples,
+        }
+
+        # Resume from an existing checkpoint if one is present and compatible
+        resume_results = None
+        if args.checkpoint and Path(args.checkpoint).exists():
+            resume_results, saved_metadata = load_results(args.checkpoint)
+            compatible, mismatch_key = checkpoint_is_compatible(saved_metadata, metadata)
+            if not compatible:
+                parser.error(
+                    f"Checkpoint '{args.checkpoint}' is incompatible with the current "
+                    f"run (mismatch on '{mismatch_key}'). Use a different --checkpoint "
+                    "path or matching arguments."
+                )
+            n_done = count_completed_points(resume_results)
+            print(
+                f"\nResuming from checkpoint: {args.checkpoint} "
+                f"({n_done} parameter point(s) already computed)"
+            )
+
         all_results = evaluate_across_parameters(
             param_list,
             param_type,
@@ -692,22 +808,15 @@ def main():
             args.D_min,
             args.D_max,
             verbose=args.verbose or True,
+            checkpoint_path=args.checkpoint,
+            resume_results=resume_results,
+            checkpoint_metadata=metadata,
         )
         methods_to_plot = args.methods
         D_min_plot = args.D_min
         D_max_plot = args.D_max
 
         if args.save_results:
-            metadata = {
-                "methods": args.methods,
-                "param_type": param_type,
-                "D_min": args.D_min,
-                "D_max": args.D_max,
-                "param_list": param_list,
-                "fixed_fps": fixed_fps,
-                "fixed_noise": fixed_noise,
-                "n_samples": args.num_samples,
-            }
             save_results(args.save_results, all_results, metadata)
 
     # Generate plot
