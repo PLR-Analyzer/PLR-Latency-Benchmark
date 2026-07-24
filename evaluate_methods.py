@@ -490,6 +490,48 @@ def plot_results(all_results, method_names, param_type, D_min, D_max, output_pat
     # plt.show()
 
 
+def print_std_summary(all_results, method_names):
+    """Print the mean error (MAE) and mean error SD per method.
+
+    Both are computed for every evaluated condition (diameter pair x fixed
+    value x swept value) and then averaged per method, giving a single accuracy
+    number (mean MAE) and a single consistency number (mean SD) each. Returns
+    the {method: {"mae": ..., "std": ...}} mapping.
+    """
+    print("\n" + "=" * 70)
+    print("Mean error (MAE) and error SD per method")
+    print("(averaged over all evaluated conditions)")
+    print("=" * 70)
+    print(f"  {'Method':30s}   {'Mean MAE':>9s}   {'Mean SD':>9s}")
+    print("-" * 70)
+
+    summary = {}
+    for method in method_names:
+        maes, stds = [], []
+        for diameter_results in all_results.values():
+            for eval_results in diameter_results.values():
+                for results in eval_results.values():
+                    stats = compute_error_stats(results.get(method, []))
+                    if not np.isnan(stats["mae"]):
+                        maes.append(stats["mae"])
+                    if not np.isnan(stats["std"]):
+                        stds.append(stats["std"])
+        summary[method] = {
+            "mae": float(np.mean(maes)) if maes else float("nan"),
+            "std": float(np.mean(stds)) if stds else float("nan"),
+        }
+
+    for method in sorted(
+        summary, key=lambda m: (np.isnan(summary[m]["mae"]), summary[m]["mae"])
+    ):
+        mae = summary[method]["mae"]
+        std = summary[method]["std"]
+        print(f"  {method:30s}   {mae:6.2f} ms   {std:6.2f} ms")
+    print("=" * 70)
+
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate latency detection methods across sample rates or noise levels.",
@@ -684,6 +726,9 @@ def main():
     plot_results(
         all_results, methods_to_plot, param_type, D_min_plot, D_max_plot, output_file
     )
+
+    # Report a single mean error SD per method instead of plotting it
+    print_std_summary(all_results, methods_to_plot)
 
 
 if __name__ == "__main__":
