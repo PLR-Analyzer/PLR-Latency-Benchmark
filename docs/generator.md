@@ -18,11 +18,11 @@ The generated curves closely replicate real pupillometry recordings and include 
 The pupil diameter \(D(t)\) is governed by the nonlinear dynamic equation:
 
 $$
-\frac{dM}{dD}\frac{dD}{dt} + 2.3026\,\mathrm{atanh}\!\left(\frac{D - 4.9}{3}\right) = 5.2 - 0.45\ln\!\left(\frac{\phi(t - \tau)}{\phi_{\mathrm{ref}}}\right)\tag{1}
+\frac{dM}{dD}\frac{dD}{dt} + 2.3026~\mathrm{atanh}\left(\frac{D - 4.9}{3}\right) = 5.2 - 0.45\ln\!\left(\frac{\phi(t - \tau)}{\phi_{\mathrm{ref}}}\right)\tag{1}
 $$
 with
 $$
-M(D) = \operatorname{atanh} \left( \frac{D-4.9}{3} \right),
+M(D) = \mathrm{atanh} \left( \frac{D-4.9}{3} \right),
 $$
 
 Where:
